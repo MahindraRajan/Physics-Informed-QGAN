@@ -1,4 +1,4 @@
-# FastInversePhotonics: PINN + Quantum GAN Inverse Design Toolkit
+# Fast InversePhotonics: PINN + Quantum GAN Inverse Design Toolkit
 
 A hybrid **physics-informed neural network (PINN) + quantum GAN (QGAN)** framework for **fast, scalable inverse design of photonic devices**.  
 By embedding analytical resonance models (e.g., Fano-like spectral responses) into the loss function, the method ensures **physical fidelity**. Quantum-enhanced generative modeling enables efficient exploration of high-dimensional design spaces, achieving:
