@@ -57,7 +57,7 @@ This framework provides a scalable route for rapid prototyping of photonic compo
 ## Installation
 
 ### Requirements
-- Python ≥ 3.8  
+- Python ≥ 3.9  
 - [PyTorch](https://pytorch.org/)  
 - [PennyLane](https://pennylane.ai/) or Qiskit (for quantum backends)  
 - NumPy, SciPy, Matplotlib
