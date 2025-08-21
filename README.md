@@ -12,25 +12,9 @@ FastInversePhotonics accelerates the inverse design of high-Q dielectric metasur
   - Design Q-factors improved by ~100×
 - **Scalability & Applicability**: Extensible across applications in photonics, including metasurfaces, sensors, and optical communication components.
 
-##  Table of Contents
-1. [Installation](#installation)  
-2. [Usage](#usage)  
-3. [Examples](#examples)  
-4. [Performance Benchmark](#performance-benchmark)  
-5. [Contributing](#contributing)  
-6. [License](#license)  
-7. [Contact](#contact)
-
----
-
 ##  Installation  
 ### Prerequisites  
 - Python ≥ 3.8  
 - PyTorch or alternative ML framework  
-- Access to quantum simulator or quantum backend  
+- Access to quantum simulator or quantum backend  (PennyLane)
 - Standard dependencies: NumPy, SciPy, YAML parser, etc.
-
-```bash
-git clone https://github.com/<your-username>/FastInversePhotonics.git
-cd FastInversePhotonics
-pip install -r requirements.txt
