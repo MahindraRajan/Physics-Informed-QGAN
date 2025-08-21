@@ -28,7 +28,7 @@ This framework provides a scalable route for rapid prototyping of photonic compo
   - Outputs model checkpoints and generated designs  
 
 - **`validation-qgan-pinn.py`**  
-  Validates trained **QGAN + IWAE models**.  
+  Validates trained **QGAN + PINN models**.  
   - Performs spectral parameter optimization for target Q-factors  
   - Generates corresponding metasurface designs  
   - Evaluates spectral fidelity and saves results  
