@@ -13,7 +13,7 @@ This framework provides a scalable route for rapid prototyping of photonic compo
 
 ## Project Structure & Python File Descriptions
 
-All Python scripts are located inside the **`code/`** folder
+All Python scripts are located inside the [**`code/`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code) folder
 
 - **`train_iwae_abs.py`**  
   Trains an **Importance-Weighted Autoencoder (IWAE)** on image datasets (64×64 RGB).  
