@@ -61,5 +61,5 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
 ### Requirements
 - Python ≥ 3.9  
 - [PyTorch](https://pytorch.org/)  
-- [PennyLane](https://pennylane.ai/) or Qiskit (for quantum backends)  
+- [PennyLane](https://pennylane.ai/) (for quantum backends)  
 - NumPy, SciPy, Matplotlib
