@@ -11,6 +11,16 @@ This framework provides a scalable route for rapid prototyping of photonic compo
 
 ---
 
+## Training Data
+
+We use metasurface absorption spectra from [**UCLA Raman Lab – Multiclass Metasurface Inverse Design**](https://github.com/Raman-Lab-UCLA/Multiclass_Metasurface_InverseDesign/tree/main/Training_Data).  
+
+- The dataset (`absorptionData_HybridGAN.csv`) contains absorption spectra for multiple structures over the wavelength range **4–12 μm**.  
+- Each row corresponds to a unique **structure ID** (`Var1_1`) followed by spectral values (`Var1_2 … Var1_801`).  
+- The spectra are converted into **frequency domain (THz)** for Fano lineshape fitting and physics-informed training.
+
+---
+
 ## Project Structure & Python File Descriptions
 
 All Python scripts are located inside the [**`code/`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code) folder
@@ -54,6 +64,25 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
   - `Discriminator`: with auxiliary regression head for physical parameters  
   - `QuantumGenerator`: variational quantum circuit (e.g., Efficient-SU2 ansatz) for quantum-assisted generation  
 
+- **`fitting.py`**  
+  Fits **Fano resonance parameters** to all absorption spectra in the dataset.  
+  - Input: CSV (`absorptionData_HybridGAN.csv`) with structure IDs and spectra  
+  - Converts wavelength (µm) to frequency (THz) using ω = c / λ  
+  - Fits **Fano lineshape**:  
+    \[
+    A(\omega) = A_0 \cdot \frac{(q + \epsilon)^2}{1 + \epsilon^2}, \quad 
+    \epsilon = \frac{2(\omega - \omega_0)}{\Gamma}
+    \]  
+  - Extracted parameters per structure:  
+    - `A0` (amplitude)  
+    - `q` (asymmetry factor)  
+    - `w0_THz` (resonance frequency, THz)  
+    - `Gamma_THz` (linewidth, THz)  
+  - Outputs a new CSV (`fano_fit_results.csv`) with columns:  
+    ```
+    structure_name, A0, q, w0_THz, Gamma_THz
+    ```
+
 ---
 
 ## Installation
@@ -62,4 +91,4 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
 - Python ≥ 3.9  
 - [PyTorch](https://pytorch.org/)  
 - [PennyLane](https://pennylane.ai/) (for quantum backends)  
-- NumPy, SciPy, Matplotlib
+- NumPy, SciPy, Matplotlib, Pandas
