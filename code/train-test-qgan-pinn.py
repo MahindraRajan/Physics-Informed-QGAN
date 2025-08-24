@@ -153,7 +153,7 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
             noise4 = torch.rand(physics_batch, label_dims, device=device)
 
             gen_phys_real = generator(noise3)  # latent-like tensors
-            _, pred_phys = discriminator(gen_phys_real.detach(), noise4)
+            _, pred_phys = discriminator(gen_phys_real.detach(), noise2)
             physics_loss_D = physics_constraint_loss(pred_phys)
 
             errD = errD_gan + physics_loss_D
@@ -169,7 +169,7 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
 
             # Physics penalty for generator (use fresh physics samples)
             gen_phys_fake = generator(noise3)  # shape [physics_batch, latent]
-            _, pred_phys_fake = discriminator(gen_phys_fake, noise4)
+            _, pred_phys_fake = discriminator(gen_phys_fake, noise2)
             physics_loss_G = physics_constraint_loss(pred_phys_fake)
 
             errG = errG_gan + physics_loss_G
