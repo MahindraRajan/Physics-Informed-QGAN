@@ -225,7 +225,7 @@ if __name__ == '__main__':
     image_size = 64
     batch_size = 16
     num_samples = 5
-    num_epochs = 500
+    num_epochs = 5000
     workers = 1
     lrG = 1e-5  # generator LR
     lrD = 1e-4  # discriminator LR
@@ -245,10 +245,10 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Data preparation (Adjust the path as needed)
-    img_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/Dielectric_Images/'
-    spectra_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/absorptionData_HybridGAN-DM.csv'
-    save_dir     = '/dgxb_home/se21pphy004/Multiclass_Metasurface/QGAN_PINN_SAVE'                  # Directory to save models and plots
-    pretrained_iwae_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
+    spectra_path = 'C:/.../absorptionData_HybridGAN.csv'  # CSV file with physics parameters (index should map to images)
+    img_path = 'C:/.../Images'   # Root directory for images used by ImageFolder
+    save_dir = 'C:/.../PINN_QGAN_SAVE/'   # Save models after training
+    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
 
     excelData, excelDataSpectra, excelDataTensor = Excel_Tensor(spectra_path)
 
