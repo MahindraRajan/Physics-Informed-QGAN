@@ -24,7 +24,7 @@ import random
 # 0) USER CONFIGURATION
 # -----------------------------
 # Update these paths before running
-spectra_path = 'C:/.../absorptionData_HybridGAN.csv'  # CSV file with physics parameters (index should map to images)
+spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters (index should map to images)
 img_path = 'C:/.../Images'   # Root directory for images used by ImageFolder
 save_dir = 'C:/.../PINN_GAN_SAVE/'   # Save models after training
 
