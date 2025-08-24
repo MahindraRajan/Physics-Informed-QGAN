@@ -50,7 +50,7 @@ random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
 #Number of workers for dataloader (on Windows set to 0)
-workers = 0
+workers = 1
 image_size  = 64       # Image dimensions: 64x64
 nc          = 3        # Number of channels (RGB)
 latent_dim  = 16       # Dimension of the noise part of the input
