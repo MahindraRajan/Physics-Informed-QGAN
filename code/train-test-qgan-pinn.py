@@ -245,7 +245,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Data preparation (Adjust the path as needed)
-    spectra_path = 'C:/.../absorptionData_HybridGAN.csv'  # CSV file with physics parameters (index should map to images)
+    spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters (index should map to images)
     img_path = 'C:/.../Images'   # Root directory for images used by ImageFolder
     save_dir = 'C:/.../PINN_QGAN_SAVE/'   # Save models after training
     pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
