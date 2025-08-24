@@ -226,7 +226,7 @@ if __name__ == '__main__':
     batch_size = 16
     num_samples = 5
     num_epochs = 5000
-    workers = 1
+    workers = 1 #Number of workers for dataloader (on Windows set to 0)
     lrG = 1e-5  # generator LR
     lrD = 1e-4  # discriminator LR
     lambda_physics = 1
