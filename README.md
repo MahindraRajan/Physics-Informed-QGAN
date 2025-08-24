@@ -78,7 +78,7 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
     - `Gamma_THz` (linewidth, THz)  
   - Outputs a new CSV (`fano_fit_results.csv`) with columns:  
     ```
-    structure_name, A0, q, w0_THz, Gamma_THz
+    structure_name, A0, w0_THz, q, Gamma_THz
     ```
 
 ---
