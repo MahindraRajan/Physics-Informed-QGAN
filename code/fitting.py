@@ -1,5 +1,5 @@
 # Fit Fano lineshape (A0, q, w0_THz, Gamma_THz) to ALL absorption spectra in the CSV.
-# Output CSV columns: structure_name, A0, q, w0_THz, Gamma_THz
+# Output CSV columns (and order): structure_name, A0, w0_THz, q, Gamma_THz
 # ω is FREQUENCY in THz (ω = c / λ), not angular frequency.
 
 import numpy as np
@@ -31,10 +31,6 @@ def fano(omega_THz, A0, q, w0_THz, Gamma_THz):
 # Helpers
 # -----------------------------
 def build_frequency_axis_THz(n_points, wl_min_um, wl_max_um):
-    """
-    Columns Var1_2 ... Var1_(1+n_points) span wl_min_um–wl_max_um (µm).
-    Convert λ (µm) → ω (THz) via ω = c/λ. Return ascending ω and index.
-    """
     lam_um = np.linspace(wl_min_um, wl_max_um, n_points)
     c = 299_792_458.0  # m/s
     omega_THz = (c / (lam_um * 1e-6)) / 1e12
@@ -74,7 +70,6 @@ def initial_guess_and_bounds(omega_THz, A):
     w0_guess = float(omega_THz[i_max])
     A0_guess = float(np.nanmax(A))
     Gamma_guess = float(fwhm_estimate(omega_THz, A))
-
     wmin, wmax = float(np.nanmin(omega_THz)), float(np.nanmax(omega_THz))
     span = max(1e-6, wmax - wmin)
 
@@ -85,19 +80,19 @@ def initial_guess_and_bounds(omega_THz, A):
     return p0, (bounds_lower, bounds_upper)
 
 def fit_one(omega_THz, A):
-    """Return dict: A0, q, w0_THz, Gamma_THz (NaN if fit fails)."""
+    """Return dict: A0, w0_THz, q, Gamma_THz (NaN if fit fails)."""
     mask = np.isfinite(omega_THz) & np.isfinite(A)
     x = omega_THz[mask]
     y = np.asarray(A)[mask]
     if x.size < 5:
-        return dict(A0=np.nan, q=np.nan, w0_THz=np.nan, Gamma_THz=np.nan)
+        return dict(A0=np.nan, w0_THz=np.nan, q=np.nan, Gamma_THz=np.nan)
     p0, bounds = initial_guess_and_bounds(x, y)
     try:
         popt, _ = curve_fit(fano, x, y, p0=p0, bounds=bounds, maxfev=20000)
-        return dict(A0=float(popt[0]), q=float(popt[1]),
-                    w0_THz=float(popt[2]), Gamma_THz=float(popt[3]))
+        return dict(A0=float(popt[0]), w0_THz=float(popt[2]),
+                    q=float(popt[1]), Gamma_THz=float(popt[3]))
     except Exception:
-        return dict(A0=np.nan, q=np.nan, w0_THz=np.nan, Gamma_THz=np.nan)
+        return dict(A0=np.nan, w0_THz=np.nan, q=np.nan, Gamma_THz=np.nan)
 
 # -----------------------------
 # Main
@@ -105,7 +100,7 @@ def fit_one(omega_THz, A):
 def main():
     df = pd.read_csv(CSV_PATH)
 
-    # Identify spectral columns Var1_2 ... Var1_801 by numeric suffix
+    # Identify spectral columns Var1_2 ... Var1_801 (by numeric suffix)
     spec_cols = [c for c in df.columns if c.startswith("Var1_") and c != STRUCTURE_COL]
     def _suffix_num(c):
         try:
@@ -124,7 +119,6 @@ def main():
     )
 
     results = []
-    # Loop over ALL structures
     for i, row in df.iterrows():
         spectrum = row[spec_cols].to_numpy(dtype=float)[sort_idx]
         params = fit_one(omega_THz, spectrum)
@@ -132,11 +126,9 @@ def main():
             "structure_name": row.get(STRUCTURE_COL, f"row_{i}"),
             **params
         })
-        (Optional) lightweight progress print
-        if (i + 1) % 1000 == 0:
-            print(f"Processed {i+1} / {len(df)}")
 
-    out_df = pd.DataFrame(results, columns=["structure_name", "A0", "q", "w0_THz", "Gamma_THz"])
+    # Arrange exactly as requested
+    out_df = pd.DataFrame(results, columns=["structure_name", "A0", "w0_THz", "q", "Gamma_THz"])
     out_df.to_csv(OUTPUT_CSV, index=False)
     print(f"Saved {len(out_df)} rows to {OUTPUT_CSV}")
 
