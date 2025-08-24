@@ -24,8 +24,9 @@ import random
 # 0) USER CONFIGURATION
 # -----------------------------
 # Update these paths before running
-spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters (index should map to images)
-img_path = 'C:/.../Images'   # Root directory for images used by ImageFolder
+# Update these paths before running
+spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters ""
+img_path = 'C:/.../Images/'   # Root directory for images
 save_dir = 'C:/.../PINN_GAN_SAVE/'   # Save models after training
 
 # -----------------------------
@@ -303,6 +304,7 @@ img_list = []
 G_losses = []
 D_losses = []
 iters = 0
+lambda_physics = 1e-12
 
 print("Starting Training Loop...")
 for epoch in range(num_epochs):
