@@ -69,10 +69,10 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
   - Input: CSV (`absorptionData_HybridGAN.csv`) with structure IDs and spectra  
   - Converts wavelength (µm) to frequency (THz) using ω = c / λ  
   - Fits **Fano lineshape**:  
-    \[
+    $$
     A(\omega) = A_0 \cdot \frac{(q + \epsilon)^2}{1 + \epsilon^2}, \quad 
     \epsilon = \frac{2(\omega - \omega_0)}{\Gamma}
-    \]  
+    $$  
   - Extracted parameters per structure:  
     - `A0` (amplitude)  
     - `q` (asymmetry factor)  
