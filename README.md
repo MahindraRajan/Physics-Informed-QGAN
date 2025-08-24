@@ -20,7 +20,7 @@ The absorption spectra used in this project are **taken from the dataset provide
 - The spectra are converted into **frequency domain (THz)** for Fano lineshape fitting and physics-informed training.
 
 ```
-C. Yeung, et al. **Global Inverse Design across Multiple Photonic Structure Classes Using Generative Deep Learning**. *Advanced Optical Materials*, 2021.
+C. Yeung, et al. Global Inverse Design across Multiple Photonic Structure Classes Using Generative Deep Learning. Advanced Optical Materials, 2021.
 ```
 
 ---
