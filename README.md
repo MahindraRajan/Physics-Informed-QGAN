@@ -25,6 +25,23 @@ We use metasurface absorption spectra from [**UCLA Raman Lab – Multiclass Meta
 
 All Python scripts are located inside the [**`code/`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code) folder
 
+- **`fitting.py`**  
+  Fits **Fano resonance parameters** to all absorption spectra in the dataset.  
+  - Input: CSV (`absorptionData_HybridGAN.csv`) with structure IDs and spectra  
+  - Converts wavelength (µm) to frequency (THz) using ω = c / λ  
+  - Fits **Fano lineshape**:  
+    $$A(\omega) = A_0 \cdot \frac{(q + \epsilon)^2}{1 + \epsilon^2}, \quad 
+    \epsilon = \frac{2(\omega - \omega_0)}{\Gamma} $$  
+  - Extracted parameters per structure:  
+    - `A0` (amplitude)  
+    - `q` (asymmetry factor)  
+    - `w0_THz` (resonance frequency, THz)  
+    - `Gamma_THz` (linewidth, THz)  
+  - Outputs a new CSV (`fano_fit_results.csv`) with columns:  
+    ```
+    structure_name, A0, w0_THz, q, Gamma_THz
+    ```
+
 - **`train_iwae_abs.py`**  
   Trains an **Importance-Weighted Autoencoder (IWAE)** on image datasets (64×64 RGB).  
   - Logs loss per epoch  
@@ -64,22 +81,6 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
   - `Discriminator`: with auxiliary regression head for physical parameters  
   - `QuantumGenerator`: variational quantum circuit (e.g., Efficient-SU2 ansatz) for quantum-assisted generation  
 
-- **`fitting.py`**  
-  Fits **Fano resonance parameters** to all absorption spectra in the dataset.  
-  - Input: CSV (`absorptionData_HybridGAN.csv`) with structure IDs and spectra  
-  - Converts wavelength (µm) to frequency (THz) using ω = c / λ  
-  - Fits **Fano lineshape**:  
-    $$A(\omega) = A_0 \cdot \frac{(q + \epsilon)^2}{1 + \epsilon^2}, \quad 
-    \epsilon = \frac{2(\omega - \omega_0)}{\Gamma} $$  
-  - Extracted parameters per structure:  
-    - `A0` (amplitude)  
-    - `q` (asymmetry factor)  
-    - `w0_THz` (resonance frequency, THz)  
-    - `Gamma_THz` (linewidth, THz)  
-  - Outputs a new CSV (`fano_fit_results.csv`) with columns:  
-    ```
-    structure_name, A0, w0_THz, q, Gamma_THz
-    ```
 
 ---
 
