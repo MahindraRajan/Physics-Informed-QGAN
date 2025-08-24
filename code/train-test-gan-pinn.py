@@ -57,7 +57,7 @@ latent_dim  = 16       # Dimension of the noise part of the input
 physics_dim = 4        # Use 4 values from the CSV (physics parameters)
 nz = physics_dim + latent_dim
 batch_size  = 16
-num_epochs  = 500
+num_epochs  = 5000
 lr          = 1e-5
 beta1       = 0.5
 ngpu = torch.cuda.device_count()
@@ -384,9 +384,7 @@ for epoch in range(num_epochs):
 
         if i % 100 == 0:
             print(f"[Epoch {epoch+1}/{num_epochs}][Batch {i}/{num_batches}] "
-                  f"Loss_D: {loss_D.item():.4f} | Loss_G: {loss_G.item():.4f} | "
-                  f"D(GAN): {loss_D_gan.item():.4f} | G(GAN): {loss_G_gan.item():.4f} | "
-                  f"Phys_D: {loss_physics_D.item():.4f} | Phys_G: {loss_physics_G.item():.4f}")
+                  f"D(GAN): {loss_D_gan.item():.4f} | G(GAN): {loss_G_gan.item():.4f}")
 
         iters += 1
 
