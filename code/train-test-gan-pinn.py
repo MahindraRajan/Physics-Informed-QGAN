@@ -279,8 +279,6 @@ def physics_constraint_loss(pred_params, A_target=0.9, w0_target=50.0, Q_min=1e5
     loss = loss_1 + loss_2
     return loss.mean()
 
-lambda_physics = 2.0            # Weight for the physics loss term
-
 optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
 optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
 
@@ -342,7 +340,7 @@ for epoch in range(num_epochs):
         # Use a random physics vector for the D's physics-loss evaluation (or could reuse physics_batch)
         random_phys = torch.rand(b_size, physics_dim, device=device)
         gen_for_phys = netG(torch.cat((random_phys, torch.rand(b_size, latent_dim, device=device)), dim=1))
-        _, pred_phys_D_raw = netD(gen_for_phys.detach(), random_phys)
+        _, pred_phys_D_raw = netD(gen_for_phys.detach(), physics_batch)
         pred_phys_D = torch.sigmoid(pred_phys_D_raw)  # squash to [0,1]
         loss_physics_D = physics_constraint_loss(pred_phys_D)
 
