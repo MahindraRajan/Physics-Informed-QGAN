@@ -189,7 +189,7 @@ print("Classifier:", classifier)
 # Save the image and convert to black and white
 # --------------------------------------------
 # Save RGB image
-output_path = "/dgxb_home/se21pphy004/Multiclass_Metasurface/PINN-GAN image saves/pinn-generated_metasurface.png"
+output_path = "C:/.../pinn-generated_metasurface.png"
 plt.imsave(output_path, img)
 print(f"Generated image saved to: {output_path}")
 
