@@ -244,10 +244,10 @@ if __name__ == '__main__':
     # Define device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    img_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/Dielectric_Images/'
-    spectra_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/absorptionData_HybridGAN-DM.csv'
-    save_dir     = '/dgxb_home/se21pphy004/Multiclass_Metasurface/QGAN_PINN_SAVE'                  # Directory to save models and plots
-    pretrained_iwae_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
+    spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters ""
+    img_path = 'C:/.../Images/'   # Root directory for images
+    save_dir = 'C:/.../PINN_GAN_SAVE/'   # Save models after training
+    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
 
     excelData, excelDataSpectra, excelDataTensor = Excel_Tensor(spectra_path)
 
