@@ -150,7 +150,6 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
             # Physics penalty for discriminator (use some random conditioning for physics probe)
             physics_batch = max(2 * b_size, 1)
             noise3 = torch.rand(physics_batch, label_dims + latent, device=device)
-            noise4 = torch.rand(physics_batch, label_dims, device=device)
 
             gen_phys_real = generator(noise3)  # latent-like tensors
             _, pred_phys = discriminator(gen_phys_real.detach(), noise2)
