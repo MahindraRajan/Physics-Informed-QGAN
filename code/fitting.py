@@ -1,7 +1,6 @@
-# Fit Fano lineshape (A0, q, w0_THz, Gamma_THz) to 10 random absorption spectra.
-# ω is FREQUENCY (THz), not angular frequency.
-# Output: fano_fit_results_10_simplified.csv with columns:
-# structure_name, A0, q, w0_THz, Gamma_THz
+# Fit Fano lineshape (A0, q, w0_THz, Gamma_THz) to ALL absorption spectra in the CSV.
+# Output CSV columns: structure_name, A0, q, w0_THz, Gamma_THz
+# ω is FREQUENCY in THz (ω = c / λ), not angular frequency.
 
 import numpy as np
 import pandas as pd
@@ -10,13 +9,11 @@ from scipy.optimize import curve_fit
 # -----------------------------
 # Config
 # -----------------------------
-CSV_PATH = "absorptionData_HybridGAN.csv"   # path to your CSV
-STRUCTURE_COL = "Var1_1"                    # structure name column
+CSV_PATH = "C:/.../absorptionData_HybridGAN.csv"    # path to your CSV
+STRUCTURE_COL = "Var1_1"                     # structure name/ID column
 WAVELENGTH_MIN_UM = 4.0
 WAVELENGTH_MAX_UM = 12.0
-N_RANDOM = 10
-RANDOM_SEED = 42
-OUTPUT_CSV = "fano_fit_results_10_simplified.csv"
+OUTPUT_CSV = "C:/.../fano_fit_results.csv"
 
 # -----------------------------
 # Fano model (ω in THz)
@@ -35,8 +32,8 @@ def fano(omega_THz, A0, q, w0_THz, Gamma_THz):
 # -----------------------------
 def build_frequency_axis_THz(n_points, wl_min_um, wl_max_um):
     """
-    Your columns Var1_2 ... Var1_(1+n_points) span wl_min_um–wl_max_um (µm), inclusive.
-    Convert λ (µm) to ω (THz) via ω = c/λ and return ascending ω with a sorting index.
+    Columns Var1_2 ... Var1_(1+n_points) span wl_min_um–wl_max_um (µm).
+    Convert λ (µm) → ω (THz) via ω = c/λ. Return ascending ω and index.
     """
     lam_um = np.linspace(wl_min_um, wl_max_um, n_points)
     c = 299_792_458.0  # m/s
@@ -108,7 +105,7 @@ def fit_one(omega_THz, A):
 def main():
     df = pd.read_csv(CSV_PATH)
 
-    # Identify spectral columns Var1_2 ... Var1_801 (by numeric suffix)
+    # Identify spectral columns Var1_2 ... Var1_801 by numeric suffix
     spec_cols = [c for c in df.columns if c.startswith("Var1_") and c != STRUCTURE_COL]
     def _suffix_num(c):
         try:
@@ -121,23 +118,23 @@ def main():
     if n_points < 5:
         raise ValueError(f"Found only {n_points} spectral columns; expected ~800.")
 
+    # Build ω (THz) axis once and sort index to align spectra with ascending ω
     omega_THz, sort_idx = build_frequency_axis_THz(
         n_points, WAVELENGTH_MIN_UM, WAVELENGTH_MAX_UM
     )
 
-    # Choose N_RANDOM unique rows
-    rng = np.random.default_rng(RANDOM_SEED)
-    chosen_idx = rng.choice(len(df), size=min(N_RANDOM, len(df)), replace=False)
-
     results = []
-    for i in chosen_idx:
-        row = df.iloc[i]
+    # Loop over ALL structures
+    for i, row in df.iterrows():
         spectrum = row[spec_cols].to_numpy(dtype=float)[sort_idx]
-        fit = fit_one(omega_THz, spectrum)
+        params = fit_one(omega_THz, spectrum)
         results.append({
             "structure_name": row.get(STRUCTURE_COL, f"row_{i}"),
-            **fit
+            **params
         })
+        (Optional) lightweight progress print
+        if (i + 1) % 1000 == 0:
+            print(f"Processed {i+1} / {len(df)}")
 
     out_df = pd.DataFrame(results, columns=["structure_name", "A0", "q", "w0_THz", "Gamma_THz"])
     out_df.to_csv(OUTPUT_CSV, index=False)
