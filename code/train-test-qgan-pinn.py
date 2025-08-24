@@ -182,7 +182,7 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
 
             if batch_idx % 50 == 0:
                 print(f"[Epoch {epoch+1}/{num_epochs}][Batch {batch_idx}/{num_batches}] "
-                  f"D(GAN): {errD_gan.item():.4f} | G(GAN): {errG_gan.item():.4f}")
+                  f"D(GAN): {errD.item():.4f} | G(GAN): {errG.item():.4f}")
 
     print("QGAN Training Completed with Pretrained IWAE.")
 
