@@ -384,7 +384,7 @@ for epoch in range(num_epochs):
 
         if i % 100 == 0:
             print(f"[Epoch {epoch+1}/{num_epochs}][Batch {i}/{num_batches}] "
-                  f"D(GAN): {loss_D_gan.item():.4f} | G(GAN): {loss_G_gan.item():.4f}")
+                  f"D(GAN): {loss_D.item():.4f} | G(GAN): {loss_G.item():.4f}")
 
         iters += 1
 
