@@ -150,12 +150,13 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
             # Physics penalty for discriminator (use some random conditioning for physics probe)
             physics_batch = max(2 * b_size, 1)
             noise3 = torch.rand(physics_batch, label_dims + latent, device=device)
+            noise4 = torch.rand(physics_batch, label_dims).to(device)
 
             gen_phys_real = generator(noise3)  # latent-like tensors
-            _, pred_phys = discriminator(gen_phys_real.detach(), noise2)
+            _, pred_phys = discriminator(gen_phys_real.detach(), noise4)
             physics_loss_D = physics_constraint_loss(pred_phys)
 
-            errD = errD_gan + physics_loss_D
+            errD = errD_gan + lambda_physics * physics_loss_D
             errD.backward()
             optimizerD.step()
 
@@ -168,10 +169,10 @@ def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
 
             # Physics penalty for generator (use fresh physics samples)
             gen_phys_fake = generator(noise3)  # shape [physics_batch, latent]
-            _, pred_phys_fake = discriminator(gen_phys_fake, noise2)
+            _, pred_phys_fake = discriminator(gen_phys_fake, noise4)
             physics_loss_G = physics_constraint_loss(pred_phys_fake)
 
-            errG = errG_gan + physics_loss_G
+            errG = errG_gan + lambda_physics * physics_loss_G
             errG.backward()
             optimizerG.step()
 
@@ -224,11 +225,11 @@ if __name__ == '__main__':
     image_size = 64
     batch_size = 16
     num_samples = 5
-    num_epochs = 5000
+    num_epochs = 500
     workers = 1 #Number of workers for dataloader (on Windows set to 0)
     lrG = 1e-5  # generator LR
     lrD = 1e-4  # discriminator LR
-    lambda_physics = 1
+    lambda_physics = 1e-12
     label_dims = 4
     img_list = []
     G_losses = []
@@ -243,11 +244,10 @@ if __name__ == '__main__':
     # Define device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Data preparation (Adjust the path as needed)
-    spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters (index should map to images)
-    img_path = 'C:/.../Images'   # Root directory for images used by ImageFolder
-    save_dir = 'C:/.../PINN_QGAN_SAVE/'   # Save models after training
-    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
+    img_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/Dielectric_Images/'
+    spectra_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/Training_Data/absorptionData_HybridGAN-DM.csv'
+    save_dir     = '/dgxb_home/se21pphy004/Multiclass_Metasurface/QGAN_PINN_SAVE'                  # Directory to save models and plots
+    pretrained_iwae_path = '/dgxb_home/se21pphy004/Multiclass_Metasurface/pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
 
     excelData, excelDataSpectra, excelDataTensor = Excel_Tensor(spectra_path)
 
