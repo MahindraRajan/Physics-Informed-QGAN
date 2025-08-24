@@ -21,8 +21,8 @@ import pennylane as qml
 from models.models import IWAE, QuantumGenerator
 
 #Location of Saved Generator and IWAE
-genDir = "  /final_generator_qgan_iwae.pth"
-vaeDir = "  /pretrained_iwae.pth"
+genDir = "C:/.../PINN_QGAN_SAVE/final_generator_qgan_iwae.pth"
+vaeDir = "C:/.../PINN_QGAN_SAVE/pretrained_iwae.pth"
 
 # Define the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -163,7 +163,7 @@ print("Classifier:", classifier)
 # Save the image and convert to black and white
 # --------------------------------------------
 # Save RGB image
-output_path = "/dgxb_home/se21pphy004/Multiclass_Metasurface/PINN-GAN image saves/qpinn-generated_metasurface-highQF.png"
+output_path = "C:/.../qpinn-generated_metasurface-highQF.png"
 plt.imsave(output_path, img)
 print(f"Generated image saved to: {output_path}")
 
