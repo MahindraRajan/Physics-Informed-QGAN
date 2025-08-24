@@ -19,6 +19,10 @@ We use metasurface absorption spectra from [**UCLA Raman Lab – Multiclass Meta
 - Each row corresponds to a unique **structure ID** (`Var1_1`) followed by spectral values (`Var1_2 … Var1_801`).  
 - The spectra are converted into **frequency domain (THz)** for Fano lineshape fitting and physics-informed training.
 
+If you use this dataset, please cite:
+
+> C. Yeung, *et al.* **Global Inverse Design across Multiple Photonic Structure Classes Using Generative Deep Learning**. *Advanced Optical Materials*, 2021.  
+
 ---
 
 ## Project Structure & Python File Descriptions
