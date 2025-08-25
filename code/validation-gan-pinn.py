@@ -176,14 +176,6 @@ print(f"ω₀   = {omega_0:.4f}")
 print(f"Γ    = {Gamma:.6f}")
 print(f"q    = {q:.6f}")
 print(f"A0   = {A0:.6f}")
-print(f"Q    = {Q_val:.2f}")
-
-
-print(f"\nOptimized Physics Parameters:")
-print(f"ω₀   = {omega_0:.2f} THz")
-print(f"Γ    = {Gamma:.2f} THz")
-print(f"κ    = {kappa:.4f}")
-print(f"q    = {q:.4f}")
 
 im_size = 64
 pmax = 4.0
