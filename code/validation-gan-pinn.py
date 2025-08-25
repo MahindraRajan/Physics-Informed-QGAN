@@ -48,6 +48,10 @@ class Generator(nn.Module):
 # Load state_dict and move to eval mode
 # --------------------------------------------
 save_path = "C:/.../PINN_GAN_SAVE/netG.pth"
+lambda_physics = 1e-3
+physics_dim = 4
+latent_dim = 16
+nc = 3
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 netG = nn.DataParallel(Generator(ngpu=2)).to(device)
 netG.load_state_dict(torch.load(save_path, map_location=device))
@@ -57,28 +61,26 @@ netG.eval()
 # Physics-informed loss for A(w₀)
 # --------------------------------------------
 def validation_loss(pred_params, A_target, w0_target, Q_min, lambda_A=26, lambda_w0=14, lambda_Q=26):
-    """
-    Composite validation loss:
-    - A_target: target absorption at w0
-    - w0_target: desired resonance frequency
-    - Gamma_target: desired Linewidth
-    """
-    # Rescale predicted parameters
-    omega_0 = pred_params[:, 0:1] * 50 + 25  # [25, 75]
-    Gamma   = pred_params[:, 1:2] * 10 + 1   # [1, 11]
-    kappa   = pred_params[:, 2:3]
-    q       = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)  # ~[-41.84, 173.49]
+    A0 = pred_params[:, 0:1]
+    omega_0 = pred_params[:, 1:2] * 56.25 + 18.75
+    Gamma = pred_params[:, 2:3] * 6.387283913 + (-0.00034279125)
+    q = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
 
     delta = torch.zeros_like(omega_0)
-    A = ((4 * kappa) / (1 + kappa)**2) * ((q**2) / (1 + delta**2))
+    A = A0 * ((q + delta)**2 / (1 + delta**2))
 
-    # Loss terms
-    loss_A  = (A - A_target)**2
+    # Limit A to a maximum of 1.0
+    A = torch.min(A, torch.ones_like(A))
+
+    Q_val = omega_0 / (Gamma + 1e-6)
+    Q_penalty = torch.relu(Q_min - Q_val) ** 2
+
+    loss_A = torch.clamp(A_target - A, min=0.0)**2
     loss_w0 = ((omega_0 - w0_target) / 50)**2
-    loss_q  = ((q - q_target)/10)**2
-
-    total_loss = lambda_A * loss_A + lambda_w0 * loss_w0 + lambda_q * loss_q
-    return total_loss.mean()
+    loss_1 = lambda_A * loss_A + lambda_w0 * loss_w0
+    loss_2 = lambda_Q * Q_penalty
+    loss = loss_1 + loss_2
+    return loss.mean()
 
 # --------------------------------------------
 # Step 1: Optimize physics params
@@ -87,7 +89,7 @@ physics_params = torch.rand(1, 4, requires_grad=True, device=device)
 optimizer = torch.optim.Adam([physics_params], lr=0.0001)
 
 for epoch in range(200000):
-    loss = validation_loss(physics_params, A_target=0.9, w0_target=50.0, q_target=20.87)
+    loss = lambda_physics * validation_loss(physics_params, A_target=0.9, w0_target=50.0, Q_min=1e5)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
