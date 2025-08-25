@@ -20,90 +20,186 @@ import os
 import pennylane as qml
 from models.models import IWAE, QuantumGenerator
 
-#Location of Saved Generator and IWAE
+# -------------------------------------------------
+# Locations of Saved Generator and IWAE
+# -------------------------------------------------
 genDir = "C:/.../PINN_QGAN_SAVE/final_generator_qgan_iwae.pth"
 vaeDir = "C:/.../PINN_QGAN_SAVE/pretrained_iwae.pth"
 
-# Define the device
+# -------------------------------------------------
+# Device
+# -------------------------------------------------
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# Load state_dict and move to eval mode
+# Physics loss scaling (RESTORED)
+lambda_physics = 1e-3
+
+# -------------------------------------------------
+# Load generator & IWAE
+# -------------------------------------------------
 n_qubits, q_depth, n_generator = 9, 2, 1
 nc, beta, num_samples = 3, 2.0, 5
+
 generator = QuantumGenerator(n_qubits, q_depth, n_generator).to(device)
-generator.load_state_dict(torch.load(genDir))
+generator.load_state_dict(torch.load(genDir, map_location=device))
 generator.eval()
+
 iwae = IWAE(n_qubits=n_qubits, nc=nc, beta=beta, num_samples=num_samples).to(device)
-iwae.load_state_dict(torch.load(vaeDir))
+iwae.load_state_dict(torch.load(vaeDir, map_location=device))
 iwae.eval()
 
-# Physics-informed loss with Q > 1e4 constraint
-def validation_loss(pred_params, A_target, w0_target, Q_min, lambda_A=26, lambda_w0=14, lambda_Q=26):
-    A0 = pred_params[:, 0:1]
+# -------------------------------------------------
+# Staged physics-informed loss:
+#   Target 1 (ω0) must be achieved before Target 2 (A, Q) contributes
+# -------------------------------------------------
+def staged_validation_loss(
+    pred_params,
+    A_target,
+    w0_target,
+    Q_min,
+    lambda_A=26, lambda_w0=14, lambda_Q=26,
+    w0_tol=2.0,               # absolute tolerance for ω0 to be "achieved"
+    keep_w0_weight_after=0.1  # small ω0 weight after gating to prevent drift
+):
+    """
+    pred_params: tensor of shape [B, 4] with values in [0,1]
+    Returns:
+        loss_mean (scalar), info (dict of useful diagnostics)
+    """
+    # De-normalize (consistent everywhere in this script)
+    A0      = pred_params[:, 0:1]
     omega_0 = pred_params[:, 1:2] * 56.25 + 18.75
-    Gamma = pred_params[:, 2:3] * 6.387283913 + (-0.00034279125)
-    q = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
+    Gamma   = pred_params[:, 2:3] * 6.387283913 + (-0.00034279125)
+    q       = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
 
+    # Compute A and Q
     delta = torch.zeros_like(omega_0)
-    A = A0 * ((q + delta)**2 / (1 + delta**2))
+    A = A0 * ((q + delta) ** 2 / (1 + delta ** 2))
+    A = torch.min(A, torch.ones_like(A))  # cap A at 1.0
 
-    # Limit A to a maximum of 1.0
-    A = torch.min(A, torch.ones_like(A))
-
-    Q_val = omega_0 / (Gamma + 1e-6)
+    Q_val     = omega_0 / (Gamma + 1e-6)
     Q_penalty = torch.relu(Q_min - Q_val) ** 2
 
-    loss_A = torch.clamp(A_target - A, min=0.0)**2
-    loss_w0 = ((omega_0 - w0_target) / 50)**2
-    loss_1 = lambda_A * loss_A + lambda_w0 * loss_w0
-    loss_2 = lambda_Q * Q_penalty
-    loss = loss_1 + loss_2
-    return loss.mean()
+    # Component losses
+    loss_w0 = ((omega_0 - w0_target) / 50.0) ** 2
+    loss_A  = torch.clamp(A_target - A, min=0.0) ** 2
 
-# Optimize for high-Q (>1e4)
+    # Gate: has Target 1 (ω0) been achieved?
+    t1_mask = (torch.abs(omega_0 - w0_target) <= w0_tol).float()  # [B,1]
+
+    # Before gating: only ω0 term
+    loss_before = lambda_w0 * loss_w0
+    # After gating: A & Q plus a small ω0 term to keep it anchored
+    loss_after  = (keep_w0_weight_after * loss_w0
+                   + lambda_A * loss_A
+                   + lambda_Q * Q_penalty)
+
+    loss = (1.0 - t1_mask) * loss_before + t1_mask * loss_after
+    loss_mean = loss.mean()
+
+    info = {
+        "loss_w0": loss_w0.mean().detach(),
+        "loss_A": loss_A.mean().detach(),
+        "Q_penalty": Q_penalty.mean().detach(),
+        "t1_reached_frac": t1_mask.mean().detach(),
+        "omega_0": omega_0.detach(),
+        "A": A.detach(),
+        "Q_val": Q_val.detach(),
+    }
+    return loss_mean, info
+
+# -------------------------------------------------
+# Optimize physics params with staged targets
+# -------------------------------------------------
 physics_params = torch.rand(1, 4, requires_grad=True, device=device)
-optimizer = torch.optim.Adam([physics_params], lr=0.0001)
+optimizer = torch.optim.Adam([physics_params], lr=1e-4)
+
+A_target_val  = 0.9
+w0_target_val = 50.0
+Q_min_val     = 1e5
+w0_tol        = 2.0
+keep_after    = 0.1
+
+phase = 1  # 1: optimize ω0 only; 2: optimize A & Q (and keep small ω0 term)
 
 for epoch in range(200000):
-    loss = validation_loss(physics_params, A_target=0.9, w0_target=50.0, Q_min=1e5)
     optimizer.zero_grad()
-    loss.backward()
+
+    if phase == 1:
+        loss, info = staged_validation_loss(
+            physics_params, A_target=A_target_val, w0_target=w0_target_val, Q_min=Q_min_val,
+            lambda_A=26, lambda_w0=14, lambda_Q=26,
+            w0_tol=w0_tol, keep_w0_weight_after=0.0
+        )
+        if info["t1_reached_frac"].item() >= 1.0:
+            phase = 2
+    else:
+        loss, info = staged_validation_loss(
+            physics_params, A_target=A_target_val, w0_target=w0_target_val, Q_min=Q_min_val,
+            lambda_A=26, lambda_w0=14, lambda_Q=26,
+            w0_tol=w0_tol, keep_w0_weight_after=keep_after
+        )
+
+    (lambda_physics * loss).backward()
     optimizer.step()
+
     if epoch % 2000 == 0:
-        print(f"[{epoch}] Loss: {loss.item()*1e-9:.6f}")
-    if loss.item() < 1e-6:
-        print(f"[{epoch}] Loss: {loss.item():.6f}")
-        break
+        print(f"[{epoch}] phase={phase} "
+              f"loss={loss.item():.6e} "
+              f"t1_frac={info['t1_reached_frac'].item():.2f} "
+              f"w0={info['omega_0'].mean().item():.3f} "
+              f"A={info['A'].mean().item():.3f} "
+              f"Q={info['Q_val'].mean().item():.1f}")
 
-physics_params.data = physics_params.data.clamp(0, 1)
+    # Optional early stop once both Target 2 goals are satisfied
+    if phase == 2:
+        a_ok = (info["A"] >= (A_target_val - 1e-3)).all().item()
+        q_ok = (info["Q_val"] >= (Q_min_val - 1e-3)).all().item()
+        if a_ok and q_ok:
+            print(f"[{epoch}] Both targets satisfied; stopping.")
+            break
 
-# Generate image
+# Clamp to [0,1] range
+with torch.no_grad():
+    physics_params.clamp_(0, 1)
+
+# -------------------------------------------------
+# Generate image with optimized physics params
+# -------------------------------------------------
 latent = torch.rand(1, 5, device=device)
 z = torch.cat([physics_params.detach(), latent], dim=1)
-fake_latent = generator(z)
-fake_images = iwae.decoder(fake_latent)
-img = fake_images.detach().cpu().permute(3, 2, 1, 0).squeeze()
+with torch.no_grad():
+    fake_latent = generator(z)
+    fake_images = iwae.decoder(fake_latent)
 
-# Plot result
+# Arrange & show
+img = fake_images.detach().cpu().permute(3, 2, 1, 0).squeeze()
 img = make_grid(img, normalize=True).permute(1, 0, 2).numpy()
 plt.imshow(img)
-plt.title("Generated Metasurface (High-Q)")
+plt.title("Generated Metasurface (High-Q, staged targets)")
 plt.axis('off')
 plt.show()
 plt.imsave("qpinn-generated_metasurface-highQF.png", img)
 
-A0 = physics_params[0, 0].item()
-omega_0 = physics_params[0, 1].item() * 56.25 + 18.75
-Gamma = physics_params[0, 2].item() * 6.387283913 + (-0.00034279125)
-q = physics_params[0, 3].item() * (173.4895044 + 41.84328885) + (-41.84328885)
-Q_factor = omega_0 / (Gamma + 1e-6)
+# -------------------------------------------------
+# Print optimized (de-normalized) physics parameters
+# -------------------------------------------------
+with torch.no_grad():
+    A0      = physics_params[0, 0].item()
+    omega_0 = physics_params[0, 1].item() * 56.25 + 18.75
+    Gamma   = physics_params[0, 2].item() * 6.387283913 + (-0.00034279125)
+    q       = physics_params[0, 3].item() * 215.33279325 + (-41.84328885)
+    delta   = 0.0
+    A_val   = min(1.0, A0 * ((q + delta) ** 2 / (1 + delta ** 2)))
+    Q_val   = omega_0 / (Gamma + 1e-6)
 
 print(f"\nOptimized Physics Parameters:")
 print(f"ω₀   = {omega_0:.4f} THz")
-print(f"Γ    = {abs(Gamma):.4f} THz")
-print(f"A0    = {A0:.4f}")
+print(f"Γ    = {abs(Gamma):.6f} THz")
+print(f"A0   = {A0:.4f}")
 print(f"q    = {q:.4f}")
-print(f"Q     = {abs(Q_factor):.2f}")
+print(f"A(δ=0) capped = {A_val:.4f}")
+print(f"Q    = {abs(Q_val):.2f}")
 
 im_size = 64
 pmax = 0.0
