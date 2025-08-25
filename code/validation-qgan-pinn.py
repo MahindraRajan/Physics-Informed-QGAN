@@ -111,13 +111,11 @@ plt.imsave("qpinn-generated_metasurface-highQF.png", img)
 # Print optimized (de-normalized) physics parameters
 # -------------------------------------------------
 with torch.no_grad():
-    A0      = physics_params[0, 0].item()
+    A0 = physics_params[0, 0].item()
     omega_0 = physics_params[0, 1].item() * 56.25 + 18.75
-    Gamma   = physics_params[0, 2].item() * 6.387283913 + (-0.00034279125)
-    q       = physics_params[0, 3].item() * 215.33279325 + (-41.84328885)
-    delta   = 0.0
-    A_val   = min(1.0, A0 * ((q + delta) ** 2 / (1 + delta ** 2)))
-    Q_val   = omega_0 / (Gamma + 1e-6)
+    Gamma = physics_params[0, 2].item() * 6.387283913 + (-0.00034279125)
+    q = physics_params[0, 3].item() * (173.4895044 + 41.84328885) + (-41.84328885)
+    Q_factor = omega_0 / (Gamma + 1e-6)
 
 print(f"\nOptimized Physics Parameters:")
 print(f"ω₀   = {omega_0:.4f} THz")
