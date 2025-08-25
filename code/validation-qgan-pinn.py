@@ -144,12 +144,7 @@ for epoch in range(200000):
     optimizer.step()
 
     if epoch % 2000 == 0:
-        print(f"[{epoch}] phase={phase} "
-              f"loss={loss.item():.6e} "
-              f"t1_frac={info['t1_reached_frac'].item():.2f} "
-              f"w0={info['omega_0'].mean().item():.3f} "
-              f"A={info['A'].mean().item():.3f} "
-              f"Q={info['Q_val'].mean().item():.1f}")
+        print(f"[Epoch = {epoch}], loss={loss.item():.6e}")
 
     # Optional early stop once both Target 2 goals are satisfied
     if phase == 2:
