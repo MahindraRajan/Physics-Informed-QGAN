@@ -239,8 +239,8 @@ class QuantumGenerator(nn.Module):
             for W, b in zip(self.q_params, self.bias):
                 # Apply orthogonal transformation
                 theta = torch.matmul(x[i], W) + b
-                output = self.quantum_generator(theta) # Pass each batch element through the quantum generator
-                element_results.append(torch.tensor(output, dtype=torch.float32, device=x.device))
+                output = self.quantum_generator(theta)  # Pass each batch element through the quantum generator
+                element_results.append(output.to(x.device, dtype=torch.float32))
             batch_results.append(torch.cat(element_results, dim=0))  # Concatenate results for this element
 
         x = torch.stack(batch_results) # Stack to reform the batch dimension
