@@ -21,7 +21,7 @@ import torch.nn.functional as F
 # -------------------------------------------------
 # Config
 # -------------------------------------------------
-save_path = "PINN_GAN_SAVE/netG.pth"
+save_path = "C:/..../PINN_GAN_SAVE/netG.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ngpu = torch.cuda.device_count()
 
@@ -35,13 +35,6 @@ lambda_physics = 1e-3
 A_target_val  = 0.9
 w0_target_val = 50.0   # must be in same units as ω0 after de-normalization below
 Q_min_val     = 1e5
-
-# Gating / training
-w0_tol = 2.0                  # absolute tolerance to consider Target 1 "achieved"
-keep_w0_weight_after = 0.1    # keep a small ω0 weight after gating to avoid drift
-max_epochs = 200000
-lr = 1e-4
-print_every = 2000
 
 # -------------------------------------------------
 # Generator (must match training)
@@ -94,105 +87,58 @@ netG.load_state_dict(state_dict)
 netG.eval()
 
 # -------------------------------------------------
-# Staged validation loss (ω0 first, then A & Q)
+# Validation loss
 # -------------------------------------------------
-def staged_validation_loss(
-    pred_params,
-    A_target,
-    w0_target,
-    Q_min,
-    lambda_A=26, lambda_w0=14, lambda_Q=26,
-    w0_tol=2.0,
-    keep_w0_weight_after=0.0
-):
+def validation_loss(pred_params, A_target, w0_target, Q_min,
+                    lambda_A=26, lambda_w0=14, lambda_Q=26):
     """
-    pred_params in [0,1] for each column; de-normalized as below
-    Returns: (loss_mean, info_dict)
+    Composite validation loss:
+    - A_target: target absorption at w0
+    - w0_target: desired resonance frequency
+    - Gamma_target: desired Linewidth
     """
-    # De-normalize to physical space (consistent everywhere)
-    A0      = pred_params[:, 0:1]
-    omega_0 = pred_params[:, 1:2] * 56.25 + 18.75              # ω0 in target units
-    Gamma   = pred_params[:, 2:3] * 6.387283913 + (-0.00034279125)
-    q       = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
+    # Rescale predicted parameters
+    A0 = pred_params[:, 0:1]
+    omega_0 = pred_params[:, 1:2] * 56.25 + 18.75
+    Gamma = pred_params[:, 2:3] * 6.387283913 + (-0.00034279125)
+    q = pred_params[:, 3:4] * (173.4895044 + 41.84328885) + (-41.84328885)
 
-    # Physics for A and Q
     delta = torch.zeros_like(omega_0)
-    A = A0 * ((q + delta) ** 2 / (1 + delta ** 2))
-    A = torch.min(A, torch.ones_like(A))  # cap A at 1.0
+    A = A0 * ((q + delta)**2 / (1 + delta**2))
 
-    Q_val     = omega_0 / (Gamma + 1e-6)
+    # Limit A to a maximum of 1.0
+    A = torch.min(A, torch.ones_like(A))
+
+    Q_val = omega_0 / (Gamma + 1e-6)
     Q_penalty = torch.relu(Q_min - Q_val) ** 2
 
-    # Per-term losses
-    loss_w0 = ((omega_0 - w0_target) / 50.0) ** 2
-    loss_A  = torch.clamp(A_target - A, min=0.0) ** 2
+    loss_A = torch.clamp(A_target - A, min=0.0)**2
+    loss_w0 = ((omega_0 - w0_target) / 50)**2
+    loss_1 = lambda_A * loss_A + lambda_w0 * loss_w0
+    loss_2 = lambda_Q * Q_penalty
+    loss = loss_1 + loss_2
+    return loss.mean()
 
-    # Gate: Target 1 is "achieved" if |ω0 - w0_target| <= w0_tol
-    t1_mask = (torch.abs(omega_0 - w0_target) <= w0_tol).float()  # [B,1]
+# --------------------------------------------
+# Step 1: Optimize physics params
+# --------------------------------------------
+physics_params = torch.rand(1, 4, requires_grad=True, device=device)
+optimizer = torch.optim.Adam([physics_params], lr=0.0001)
+lambda_physics = 1e-12
 
-    # Compose staged loss
-    loss_before = lambda_w0 * loss_w0
-    loss_after  = (keep_w0_weight_after * loss_w0
-                   + lambda_A * loss_A
-                   + lambda_Q * Q_penalty)
-
-    loss = (1.0 - t1_mask) * loss_before + t1_mask * loss_after
-    loss_mean = loss.mean()
-
-    info = {
-        "loss_w0": loss_w0.mean().detach(),
-        "loss_A": loss_A.mean().detach(),
-        "Q_penalty": Q_penalty.mean().detach(),
-        "t1_reached_frac": t1_mask.mean().detach(),
-        "omega_0": omega_0.detach(),
-        "A": A.detach(),
-        "Q_val": Q_val.detach(),
-    }
-    return loss_mean, info
-
-# -------------------------------------------------
-# Step 1: Optimize physics params (flowchart style)
-# -------------------------------------------------
-physics_params = torch.rand(1, physics_dim, requires_grad=True, device=device)
-optimizer = torch.optim.Adam([physics_params], lr=lr)
-
-phase = 1  # 1: ω0 only; 2: A & Q (keep small ω0 weight to avoid drift)
-
-for epoch in range(max_epochs):
+for epoch in range(200000):
+    loss = lambda_physics * validation_loss(physics_params, A_target=0.9, w0_target=50.0, Q_min=1e5)
     optimizer.zero_grad()
-
-    if phase == 1:
-        loss, info = staged_validation_loss(
-            physics_params, A_target=A_target_val, w0_target=w0_target_val, Q_min=Q_min_val,
-            lambda_A=26, lambda_w0=14, lambda_Q=26,
-            w0_tol=w0_tol, keep_w0_weight_after=0.0
-        )
-        # Switch to Phase 2 after Target 1 achieved for the batch
-        if info["t1_reached_frac"].item() >= 1.0:
-            phase = 2
-    else:
-        loss, info = staged_validation_loss(
-            physics_params, A_target=A_target_val, w0_target=w0_target_val, Q_min=Q_min_val,
-            lambda_A=26, lambda_w0=14, lambda_Q=26,
-            w0_tol=w0_tol, keep_w0_weight_after=keep_w0_weight_after
-        )
-
-    (lambda_physics * loss).backward()
+    loss.backward()
     optimizer.step()
+    if epoch % 2000 == 0:
+        print(f"[{epoch}] Loss: {loss.item():.6f}")
 
-    if epoch % print_every == 0:
-        print(f"[Epoch = {epoch}], loss={loss.item():.4e} ")
+    if loss.item() < 1e-6:
+        print(f"[{epoch}] Loss: {loss.item():.6f}")
+        break
 
-    # Optional global stop when both targets are satisfied in Phase 2
-    if phase == 2:
-        a_ok = (info["A"] >= (A_target_val - 1e-3)).all().item()
-        q_ok = (info["Q_val"] >= (Q_min_val - 1e-3)).all().item()
-        if a_ok and q_ok:
-            print(f"[{epoch}] Both targets satisfied; stopping.")
-            break
-
-with torch.no_grad():
-    physics_params.clamp_(0, 1)
+physics_params.data = physics_params.data.clamp(0, 1)
 
 # -------------------------------------------------
 # Step 2: Generate image from optimized physics params
