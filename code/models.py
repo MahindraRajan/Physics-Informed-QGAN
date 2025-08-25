@@ -216,7 +216,7 @@ class QuantumGenerator(nn.Module):
             qml.CNOT(wires=[i, (i + 1) % self.n_qubits])
 
         for i in range(self.n_qubits):
-            qml.RZ(params[i], wires=i % self.n_qubits)
+            qml.RY(params[i], wires=i % self.n_qubits)
 
     def quantum_generator(self, params):
         """Define the QNode."""
