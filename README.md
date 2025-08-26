@@ -37,7 +37,7 @@ C. Yeung, et al. Global Inverse Design across Multiple Photonic Structure Classe
 
 All Python scripts are located inside the [**`code/`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code) folder
 
-- **`fitting.py`**  
+- [**`fitting.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/fitting.py)
   Fits **Fano resonance parameters** to all absorption spectra in the dataset.  
   - Input: CSV (`absorptionData_HybridGAN.csv`) with structure IDs and spectra  
   - Converts wavelength (µm) to frequency (THz) using ω = c / λ  
@@ -54,39 +54,39 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
     structure_name, A0, w0_THz, q, Gamma_THz
     ```
 
-- **`train_iwae_abs.py`**  
+- [**`train_iwae_abs.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/train_iwae_abs.py)  
   Trains an **Importance-Weighted Autoencoder (IWAE)** on image datasets (64×64 RGB).  
   - Logs loss per epoch  
   - Saves pretrained model `pretrained_iwae.pth`  
   - Plots training curves (`losses-iwae-abs.png`)  
   - Configurable via `img_path`, `batch_size`, `epochs`, etc.
 
-- **`train-test-qgan-pinn.py`**  
+- [**`train-test-qgan-pinn.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/train-test-qgan-pinn.py)  
   Implements the **QGAN + PINN training pipeline**.  
   - Loads image/spectral datasets  
   - Builds quantum generator, discriminator, and IWAE decoder  
   - Applies physics-informed loss with resonance priors  
   - Outputs model checkpoints and generated designs  
 
-- **`validation-qgan-pinn.py`**  
+- [**`validation-qgan-pinn.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/validation-qgan-pinn.py)  
   Validates trained **QGAN + PINN models**.  
   - Performs spectral parameter optimization for target Q-factors  
   - Generates corresponding metasurface designs  
   - Evaluates spectral fidelity and saves results  
 
-- **`train-test-gan-pinn.py`**  
+- [**`train-test-gan-pinn.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/train-test-gan-pinn.py)  
   Baseline **classical GAN + PINN** framework.  
   - Convolutional generator and dual-head discriminator  
   - Trains with physics-based loss constraints  
   - Logs loss curves and generates output designs  
 
-- **`validation-gan-pinn.py`**  
+- [**`validation-gan-pinn.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/validation-gan-pinn.py)  
   Validates the **classical GAN + PINN** model.  
   - Optimizes design parameters  
   - Generates images and evaluates spectral targets  
   - Stores validation outputs  
 
-- **`models.py`**  
+- [**`models.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/tree/main/code/models.py)  
   Contains model definitions:  
   - `IWAE`: encoder/decoder with importance-weighted training  
   - `BetaVAE`: baseline variational autoencoder  
