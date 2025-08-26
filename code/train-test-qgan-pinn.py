@@ -11,7 +11,7 @@ import torchvision.utils as vutils
 import pandas as pd
 import random
 import time
-from models.models import IWAE, Discriminator, QuantumGenerator
+from models import IWAE, Discriminator, QuantumGenerator
 
 # Get GPU Information (guarded)
 print("CUDA is available: {}".format(torch.cuda.is_available()))
