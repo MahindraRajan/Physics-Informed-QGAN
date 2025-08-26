@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import pennylane as qml
-from models.models import IWAE, QuantumGenerator
+from models import IWAE, QuantumGenerator
 
 # -------------------------------------------------
 # Locations of Saved Generator and IWAE
