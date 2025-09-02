@@ -17,7 +17,7 @@ The absorption spectra used in this project are **taken from the dataset provide
 
 - The dataset (`absorptionData_HybridGAN.csv`) contains absorption spectra for multiple structures over the wavelength range **4–12 μm**.  
 - Each row corresponds to a unique **structure ID** (`Var1_1`) followed by spectral values (`Var1_2 … Var1_801`).  
-- The spectra are converted into **frequency domain (THz)** for Fano lineshape fitting and physics-informed training.
+- The spectra are converted into **frequency domain (THz)** for Fano lineshape fitting and physics-informed training using [**`fitting.py`**](https://github.com/MahindraRajan/Physics-Informed-QGAN/blob/main/code/fitting.py).
 
 ```
 C. Yeung, et al. Global Inverse Design across Multiple Photonic Structure Classes Using Generative Deep Learning. Advanced Optical Materials, 2021.
