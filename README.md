@@ -13,7 +13,7 @@ This framework provides a scalable route for rapid prototyping of photonic compo
 
 ## Training Data
 
-The absorption spectra used in this project are **taken from the dataset provided by the [UCLA Raman Lab – Multiclass Metasurface Inverse Design project](https://github.com/Raman-Lab-UCLA/Multiclass_Metasurface_InverseDesign/)**.  
+The absorption spectra used in this project are **taken from the dataset provided by the [UCLA Raman Lab – Multiclass Metasurface Inverse Design project](https://github.com/Raman-Lab-UCLA/Multiclass_Metasurface_InverseDesign/tree/main/Training_Data)**.  
 
 - The dataset (`absorptionData_HybridGAN.csv`) contains absorption spectra for multiple structures over the wavelength range **4–12 μm**.  
 - Each row corresponds to a unique **structure ID** (`Var1_1`) followed by spectral values (`Var1_2 … Var1_801`).  
