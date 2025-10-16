@@ -103,3 +103,23 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
 - [PyTorch](https://pytorch.org/)  
 - [PennyLane](https://pennylane.ai/) (for quantum backends)  
 - NumPy, SciPy, Matplotlib, Pandas
+
+## 📘 Citation
+
+If you refer to this work, please cite:
+
+Sreeraj Rajan Warrier, Jayasri Dontabhaktuni. *Inverse Design using Physics-Informed Quantum GANs for Tailored Absorption in Dielectric Metasurfaces*. arXiv:2507.18132 [physics.optics], 2025. ([arXiv](https://arxiv.org/abs/2507.18132))  
+
+### BibTeX
+
+```bibtex
+@misc{WarrierPINN2025,
+  title         = {Inverse Design using Physics-Informed Quantum GANs for Tailored Absorption in Dielectric Metasurfaces},
+  author        = {Warrier, Sreeraj Rajan and Dontabhaktuni, Jayasri},
+  year          = {2025},
+  eprint        = {2507.18132},
+  archivePrefix = {arXiv},
+  primaryClass  = {physics.optics},
+  url           = {https://arxiv.org/abs/2507.18132}
+}
+
