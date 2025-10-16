@@ -104,6 +104,8 @@ All Python scripts are located inside the [**`code/`**](https://github.com/Mahin
 - [PennyLane](https://pennylane.ai/) (for quantum backends)  
 - NumPy, SciPy, Matplotlib, Pandas
 
+---
+
 ## 📘 Citation
 
 If you refer to this work, please cite:
