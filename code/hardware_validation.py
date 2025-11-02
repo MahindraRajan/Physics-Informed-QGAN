@@ -135,7 +135,7 @@ def validation_loss(pred_params, A_target, w0_target, Q_min, lambda_A=26, lambda
     loss1 = lambda_A * loss_A + lambda_w0 * loss_w0
     loss2 = lambda_Q * Q_penalty
     loss  = loss1 + loss2
-    return (loss).mean()
+    return loss.mean()
 
 # === Optimize physics parameters ===
 physics_params = torch.rand(1, 4, requires_grad=True, device=device_torch)
