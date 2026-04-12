@@ -129,6 +129,16 @@ def main():
 
     # Arrange exactly as requested
     out_df = pd.DataFrame(results, columns=["structure_name", "A0", "w0_THz", "q", "Gamma_THz"])
+    
+    # Ensure A0 is clamped between 0 and 1
+    out_df['A0'] = out_df['A0'].clip(lower=0.0, upper=1.0)
+    # Normalize w0_THz based on the PyTorch reverse math: (val - 18.75) / 56.25
+    out_df['w0_THz'] = (out_df['w0_THz'] - 18.75) / 56.25
+    # Normalize Gamma_THz: (val + 0.034279125) / 6.387283913
+    out_df['Gamma_THz'] = (out_df['Gamma_THz'] + 0.034279125) / 6.387283913
+    # Normalize q: (val + 41.84328885) / 215.33279325
+    out_df['q'] = (out_df['q'] + 41.84328885) / 215.33279325
+    
     out_df.to_csv(OUTPUT_CSV, index=False)
     print(f"Saved {len(out_df)} rows to {OUTPUT_CSV}")
 
