@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.datasets as dset
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.utils as vutils
 import pandas as pd
 import random
 import time
+from PIL import Image
+
+# Assuming your custom models are in a file named models.py
 from models import IWAE, Discriminator, QuantumGenerator
 
-# Get GPU Information (guarded)
+# Get GPU Information
 print("CUDA is available: {}".format(torch.cuda.is_available()))
 if torch.cuda.is_available():
     print("CUDA Device Count: {}".format(torch.cuda.device_count()))
@@ -22,190 +25,172 @@ if torch.cuda.is_available():
     except Exception as e:
         print("Could not get CUDA device name:", e)
 
-# Physics-informed loss (Fano-like lineshape)
-def physics_constraint_loss(pred_params, A_target=0.9, w0_target=50.0, Q_min=1e5,
-                           lambda_A = 26, lambda_w0 = 14, lambda_Q = 26):
+# ==========================================
+# ### FIX 1: Custom Dataset to prevent misalignment ###
+# ==========================================
+class MetasurfaceDataset(Dataset):
+    def __init__(self, csv_file, img_dir, transform=None, max_samples=None):
+        self.data_frame = pd.read_csv(csv_file)
+        self.img_dir = img_dir
+        self.transform = transform
+        
+        # ### NEW: Allows you to artificially shrink dataset to 64, 500, or 3000 
+        # samples for fair benchmarking (Reviewer 1 & 2)
+        if max_samples is not None:
+            self.data_frame = self.data_frame.iloc[:max_samples]
+
+    def __len__(self):
+        return len(self.data_frame)
+
+    def __getitem__(self, idx):
+        # Assuming Column 0 is the filename (e.g., 'image_001.png')
+        img_name = os.path.join(self.img_dir, str(self.data_frame.iloc[idx, 0]))
+        image = Image.open(img_name).convert('RGB')
+        
+        # Assuming Columns 1, 2, 3, 4 are the Fano labels [A0, w0, Gamma, q]
+        labels = self.data_frame.iloc[idx, 1:5].values.astype('float32')
+        
+        if self.transform:
+            image = self.transform(image)
+            
+        return image, torch.tensor(labels)
+
+# ==========================================
+# ### FIX 2: Dynamic Physics Loss Function ###
+# ==========================================
+def physics_constraint_loss(pred_params, condition_labels, 
+                            lambda_A=26, lambda_w0=14, lambda_Q=26):
     """
-    Physics-based loss for predicted parameters.
-    Expects pred_params of shape (N, 4) in normalized form and rescales them
-    to physical ranges (same scaling used in original code).
-    pred_params columns: [A0 (0..1), w0_norm (0..1), Gamma_norm (0..1), q_norm (0..1)]
-    Returns mean loss across batch.
+    Penalizes the generator if its physics outputs don't match the specific 
+    conditions it was asked to generate.
     """
+    # 1. Un-normalize PREDICTED params
+    A0_pred = pred_params[:, 0:1]  
+    omega_0_pred = pred_params[:, 1:2] * 56.25 + 18.75
+    Gamma_pred = pred_params[:, 2:3] * 6.387283913 + (-0.034279125)
+    q_pred = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
 
-    # Rescale predicted params (same rescaling formula used in original code)
-    A0 = pred_params[:, 0:1]  # [N,1], expected in [0,1]
-    omega_0 = pred_params[:, 1:2] * 56.25 + 18.75   # maps [0,1] -> [18.75, 75]
-    Gamma = pred_params[:, 2:3] * 6.387283913 + (-0.034279125)  # maps approx
-    q = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
+    # 2. Un-normalize TARGET condition labels
+    A_target = condition_labels[:, 0:1]
+    w0_target = condition_labels[:, 1:2] * 56.25 + 18.75
+    Gamma_target = condition_labels[:, 2:3] * 6.387283913 + (-0.034279125)
+    
+    # Dynamically calculate the target Q-factor
+    Q_min_target = w0_target / (torch.abs(Gamma_target) + 1e-8)
 
-    # Use a standard Fano-like epsilon: epsilon = 2*(omega - omega0)/Gamma
-    # Evaluate A at the target frequency w0_target (i.e., A(w_target) should be A_target)
-    eps = 2.0 * (w0_target - omega_0) / (Gamma + 1e-8)
-    A_pred = A0 * ((q + eps) ** 2 / (1.0 + eps ** 2))
+    # 3. Calculate Fano Absorption of the PREDICTION at the TARGET frequency
+    eps = 2.0 * (w0_target - omega_0_pred) / (Gamma_pred + 1e-8)
+    A_pred_at_target = A0_pred * ((q_pred + eps) ** 2 / (1.0 + eps ** 2))
+    A_pred_at_target = torch.clamp(A_pred_at_target, max=1.0)
 
-    # Limit A to a maximum of 1.0 (physical)
-    A_pred = torch.clamp(A_pred, max=1.0)
+    # 4. Calculate predicted Q-factor
+    Q_val = omega_0_pred / (torch.abs(Gamma_pred) + 1e-8)
+    
+    # 5. Component Losses
+    loss_A = torch.clamp(A_target - A_pred_at_target, min=0.0) ** 2 
+    loss_w0 = ((omega_0_pred - w0_target) / 50.0) ** 2
+    Q_penalty = torch.relu(Q_min_target - Q_val) ** 2
 
-    # Quality factor penalty: Q = omega0 / Gamma
-    Q_val = omega_0 / (torch.abs(Gamma) + 1e-8)
-    Q_penalty = torch.relu(Q_min - Q_val) ** 2
-
-    # Loss components
-    loss_A = torch.clamp(A_target - A_pred, min=0.0) ** 2  # penalize if lower than target
-    loss_w0 = ((omega_0 - w0_target) / 50.0) ** 2
-
+    # Total weighted loss
     loss = (lambda_A * loss_A + lambda_w0 * loss_w0 + lambda_Q * Q_penalty).mean()
     return loss
 
-# Load the pretrained QVAE and train the QGAN
-
-def train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
-               dataloader, optimizerG, optimizerD, criterion, num_epochs,
-               device, lambda_physics, label_dims, latent):
+# ==========================================
+# ### FIX 3: Training Loop Logic ###
+# ==========================================
+def train_qgan(generator, discriminator, iwae, num_samples, dataloader, 
+               optimizerG, optimizerD, criterion, num_epochs, device, 
+               lambda_physics, label_dims, latent):
     generator.train()
     discriminator.train()
-    iwae.eval()  # Pretrained IWAE in eval mode
+    iwae.eval() 
+    mse_loss = nn.MSELoss() # Used for discriminator physics training
+    
     print("Starting Training Loop...")
 
     for epoch in range(num_epochs):
-        for batch_idx, data in enumerate(dataloader, 0):
-            real_cpu = data[0].to(device)
+        for batch_idx, (real_cpu, real_conditions) in enumerate(dataloader):
+            real_cpu = real_cpu.to(device)
+            real_conditions = real_conditions.to(device)
             b_size = real_cpu.size(0)
 
-            # Create smoothed real label per batch (one-sided smoothing)
+            # Smooth real labels (e.g., 0.95 instead of 1.0)
             real_label_val = random.uniform(0.9, 1.0)
-            # N = b_size * num_samples
             N = b_size * num_samples
             real_labels = torch.full((N,), real_label_val, device=device, dtype=torch.float)
             fake_labels = torch.full((N,), 0.0, device=device, dtype=torch.float)
 
-            # Obtain latent_real from pretrained IWAE (ensure shape matches expectation)
+            # Obtain latent_real from pretrained IWAE
             with torch.no_grad():
                 recon_real, mu, logvar, latent_real = iwae(real_cpu, num_samples)
-                # latent_real should be of shape [b_size * num_samples, latent]
-                # If IWAE returns [num_samples, b_size, latent], we will reshape below.
-
-            # Build label-conditioned inputs from excelDataTensor for this batch
-            noise_label_list = []
-            noise_joint_list = []
-
-            # We will try to fetch b_size samples * num_samples from excelDataTensor
-            base_idx = batch_idx * b_size
-            for j in range(b_size):
-                excelIndex = base_idx + j
-                if excelIndex >= len(excelDataTensor):
-                    # Out-of-range; break (or wrap if you prefer)
-                    break
-                gotdata = excelDataTensor[excelIndex]  # shape: (label_dims,)
-                for _ in range(num_samples):
-                    noise_label_list.append(gotdata)
-                    rand_lat = torch.rand(latent, device=device)
-                    joint = torch.cat((gotdata.to(device), rand_lat), dim=0)  # shape: (label_dims + latent,)
-                    noise_joint_list.append(joint)
-
-            if len(noise_joint_list) == 0:
-                continue  # skip this batch if we couldn't construct conditioning
-
-            noise = torch.stack(noise_joint_list, dim=0).to(device)   # shape: [N, nz]
-            noise2 = torch.stack(noise_label_list, dim=0).to(device)  # shape: [N, label_dims]
-
-            # Ensure latent_real shape matches expectation: try common reshapes
-            try:
-                if latent_real.dim() == 3 and latent_real.size(0) == num_samples:
-                    # shape likely [num_samples, b_size, latent] -> reorder to [b_size * num_samples, latent]
+                
+                # Reshape to [N, latent] if necessary
+                if latent_real.dim() == 3:
                     latent_real = latent_real.permute(1, 0, 2).reshape(-1, latent)
-                elif latent_real.dim() == 2 and latent_real.size(0) == b_size and num_samples == 1:
-                    # already [b_size, latent]
-                    pass
-                elif latent_real.dim() == 2 and latent_real.size(0) == N:
-                    pass
-                else:
-                    # fallback: reshape if possible, otherwise trim/pad
-                    latent_real = latent_real.reshape(-1, latent)[:noise.size(0), :latent]
-            except Exception:
-                latent_real = latent_real.reshape(-1, latent)[:noise.size(0), :latent]
 
-            latent_real = latent_real.to(device)
+            # Construct conditional inputs for the Generator
+            # Repeat the real conditions 'num_samples' times to match latent_real size
+            noise_labels = real_conditions.repeat_interleave(num_samples, dim=0)
+            
+            # Random latent noise
+            random_latents = torch.rand(N, latent, device=device)
+            
+            # Concatenate labels and random noise
+            noise_joint = torch.cat((noise_labels, random_latents), dim=1)
 
-            # ---- Discriminator update ----
+            # ---- 1. Train Discriminator ----
             discriminator.zero_grad()
 
-            # Real examples (latent_real conditioned on actual labels)
-            output_real, _ = discriminator(latent_real, noise2)
-            # make shapes compatible (flatten logits to 1D and labels to 1D)
-            output_real_1d = output_real.view(-1)
-            real_labels_1d = real_labels.to(device=device, dtype=output_real_1d.dtype).view(-1)
-            errD_real = criterion(output_real_1d, real_labels_1d)
+            # Real Pass
+            output_real, pred_phys_real = discriminator(latent_real, noise_labels)
+            errD_real = criterion(output_real.view(-1), real_labels)
 
-            # Fake examples created by generator
-            fake_latent = generator(noise)  # expected shape: [N, latent]
-            output_fake, _ = discriminator(fake_latent.detach(), noise2)
-            output_fake_1d = output_fake.view(-1)
-            fake_labels_1d = fake_labels.to(device=device, dtype=output_fake_1d.dtype).view(-1)
-            errD_fake = criterion(output_fake_1d, fake_labels_1d)
+            # Physics Loss (Discriminator): Learn to predict real Fano params accurately
+            physics_loss_D = mse_loss(pred_phys_real, noise_labels)
 
-            errD_gan = errD_real + errD_fake
+            # Fake Pass
+            fake_latent = generator(noise_joint) 
+            output_fake, _ = discriminator(fake_latent.detach(), noise_labels)
+            errD_fake = criterion(output_fake.view(-1), fake_labels)
 
-            # Physics penalty for discriminator (use some random conditioning for physics probe)
-            physics_batch = max(2 * b_size, 1)
-            noise3 = torch.rand(physics_batch, label_dims + latent, device=device)
-            noise4 = torch.rand(physics_batch, label_dims).to(device)
-
-            gen_phys_real = generator(noise3)  # latent-like tensors
-            _, pred_phys = discriminator(gen_phys_real.detach(), noise4)
-            physics_loss_D = physics_constraint_loss(pred_phys)
-
-            errD = errD_gan + lambda_physics * physics_loss_D
+            errD = errD_real + errD_fake + (lambda_physics * physics_loss_D)
             errD.backward()
             optimizerD.step()
 
-            # ---- Generator update ----
+            # ---- 2. Train Generator ----
             generator.zero_grad()
-            output_for_G, _ = discriminator(fake_latent, noise2)
-            output_for_G_1d = output_for_G.view(-1)
-            real_labels_for_G = real_labels.to(device=device, dtype=output_for_G_1d.dtype).view(-1)
-            errG_gan = criterion(output_for_G_1d, real_labels_for_G)
+            
+            output_for_G, pred_phys_fake = discriminator(fake_latent, noise_labels)
+            errG_gan = criterion(output_for_G.view(-1), real_labels)
 
-            # Physics penalty for generator (use fresh physics samples)
-            gen_phys_fake = generator(noise3)  # shape [physics_batch, latent]
-            _, pred_phys_fake = discriminator(gen_phys_fake, noise4)
-            physics_loss_G = physics_constraint_loss(pred_phys_fake)
+            # Physics Loss (Generator): Force generated physics to match target conditions
+            physics_loss_G = physics_constraint_loss(pred_phys_fake, noise_labels)
 
-            errG = errG_gan + lambda_physics * physics_loss_G
+            errG = errG_gan + (lambda_physics * physics_loss_G)
             errG.backward()
             optimizerG.step()
 
-            # Append losses for monitoring (global lists expected)
+            # Tracking
             G_losses.append(errG.item())
             D_losses.append(errD.item())
 
             if batch_idx % 50 == 0:
-                print(f"[Epoch {epoch+1}/{num_epochs}][Batch {batch_idx}/{num_batches}] "
-                  f"D(GAN): {errD.item():.4f} | G(GAN): {errG.item():.4f}")
+                print(f"[Epoch {epoch+1}/{num_epochs}][Batch {batch_idx}/{len(dataloader)}] "
+                      f"D Loss: {errD.item():.4f} | G Loss: {errG.item():.4f} "
+                      f"| G Phys: {physics_loss_G.item():.4f}")
 
-    print("QGAN Training Completed with Pretrained IWAE.")
+    print("QGAN Training Completed.")
 
-# Testing function to check the generator's output using testTensor
+# Testing function
 def test_generator(generator, iwae, testTensor, device, img_list):
     generator.eval()
     iwae.eval()
-
     with torch.no_grad():
         fake_latent = generator(testTensor.to(device))
-        # Use the iwae.decoder to generate images from latent
         fake_images = iwae.decoder(fake_latent)
         fake = fake_images.detach().cpu()
-
-    img_list.append(vutils.make_grid(fake, nrow=10, padding=2, normalize=True))
+    img_list.append(vutils.make_grid(fake, nrow=8, padding=2, normalize=True))
     return img_list
-
-def Excel_Tensor(spectra_path):
-    # Location of excel data
-    excelData = pd.read_csv(spectra_path, header=0, index_col=0)
-    excelDataSpectra = excelData.iloc[:, :4]  # first 4 columns used as conditioning labels
-    excelDataTensor = torch.tensor(excelDataSpectra.values).type(torch.FloatTensor)
-    return excelData, excelDataSpectra, excelDataTensor
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -215,9 +200,11 @@ def weights_init(m):
         if hasattr(m, 'bias') and m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
 
-# Main script
+# ==========================================
+# MAIN SCRIPT
+# ==========================================
 if __name__ == '__main__':
-    # Parameters
+    # Hyperparameters
     n_generators = 1
     n_qubits = 9
     q_depth = 2
@@ -226,105 +213,89 @@ if __name__ == '__main__':
     batch_size = 16
     num_samples = 5
     num_epochs = 500
-    workers = 1 #Number of workers for dataloader (on Windows set to 0)
-    lrG = 1e-5  # generator LR
-    lrD = 1e-4  # discriminator LR
-    lambda_physics = 1e-12
+    workers = 1 
+    lrG = 1e-5
+    lrD = 1e-4
+    lambda_physics = 1e-3  # You may need to tune this to balance GAN and Phys loss
     label_dims = 4
+    latent = 5
+    nz = label_dims + latent
+    beta1 = 0.5
+    beta2 = 0.999
+    
     img_list = []
     G_losses = []
     D_losses = []
-    latent = 5
-    nz = label_dims + latent
-    beta = 2.0
-    # Beta1 hyperparam for Adam optimizers
-    beta1 = 0.5
-    beta2 = 0.999
 
-    # Define device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    spectra_path = 'C:/.../fano_fit_results.csv'  # CSV file with physics parameters ""
-    img_path = 'C:/.../Images/'   # Root directory for images
-    save_dir = 'C:/.../PINN_GAN_SAVE/'   # Save models after training
-    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      # Pretrained IWAE weights (optional but recommended)
+    # Paths
+    spectra_path = 'C:/.../fano_fit_results.csv'  
+    img_path = 'C:/.../Images/'   
+    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      
 
-    excelData, excelDataSpectra, excelDataTensor = Excel_Tensor(spectra_path)
-
-    dataset = dset.ImageFolder(root=img_path,
-                               transform=transforms.Compose([
-                                   transforms.Resize(image_size),
-                                   transforms.CenterCrop(image_size),
-                                   transforms.ToTensor()
-                               ]))
+    # Dataset & Dataloader
+    transform = transforms.Compose([
+        transforms.Resize(image_size),
+        transforms.CenterCrop(image_size),
+        transforms.ToTensor()
+    ])
+    
+    # NOTE: To do a fair benchmark (Reviewer 2), pass max_samples=64 or 3000 here
+    dataset = MetasurfaceDataset(csv_file=spectra_path, img_dir=img_path, transform=transform, max_samples=None)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=workers, drop_last=True)
 
-    num_batches = len(dataloader)
-    print("No. of batches per epoch:", num_batches)
+    print("Total training samples:", len(dataset))
+    print("No. of batches per epoch:", len(dataloader))
 
-    # Plot some training images (optional; guard for empty dataloader)
-    try:
-        real_batch = next(iter(dataloader))
-        plt.figure(figsize=(8, 8))
-        plt.axis("off")
-        plt.title("Training Images")
-        plt.imshow(np.transpose(vutils.make_grid(real_batch[0].to(device)[:128], padding=2, normalize=True).cpu(), (1, 2, 0)))
-        plt.show()
-    except StopIteration:
-        print("Dataloader is empty. Check img_path and dataset.")
-
-    # Initialize Quantum Generator and Discriminator
+    # Initialize Models
     generator = QuantumGenerator(n_qubits, q_depth, n_generators).to(device)
     discriminator = Discriminator(n_qubits, label_dims).to(device)
-
-    # Apply the weights_init function to randomly initialize all weights
     discriminator.apply(weights_init)
 
-    # Load the pretrained QVAE from a specific file (safe map_location)
-    iwae = IWAE(n_qubits=n_qubits, nc=nc, beta=beta, num_samples=num_samples).to(device)
+    iwae = IWAE(n_qubits=n_qubits, nc=nc, beta=2.0, num_samples=num_samples).to(device)
     try:
         iwae.load_state_dict(torch.load(pretrained_iwae_path, map_location=device))
-        print("Loaded pretrained_iwae.pth")
+        print("Loaded pretrained IWAE successfully.")
     except Exception as e:
-        print("Could not load pretrained_iwae.pth:", e)
-        # Optionally raise here if IWAE is required:
-        # raise
+        print("Could not load pretrained IWAE:", e)
 
-    # Define optimizers
+    # Optimizers
     optimizerG = optim.Adam(generator.parameters(), lr=lrG, betas=(beta1, beta2))
     optimizerD = optim.Adam(discriminator.parameters(), lr=lrD, betas=(beta1, beta2))
-    criterion = nn.BCELoss(reduction='mean')  # or BCEWithLogitsLoss depending on discriminator output
+    criterion = nn.BCELoss(reduction='mean') 
 
+    # TRAIN
     start_time = time.time()
-    local_time = time.ctime(start_time)
-    print('Start Time = %s' % local_time)
+    print('Start Time = %s' % time.ctime(start_time))
 
-    # Train the QGAN
-    train_qgan(generator, discriminator, iwae, num_samples, excelDataTensor,
-               dataloader, optimizerG, optimizerD, criterion, num_epochs,
-               device, lambda_physics, label_dims, latent)
+    train_qgan(generator, discriminator, iwae, num_samples, dataloader, 
+               optimizerG, optimizerD, criterion, num_epochs, device, 
+               lambda_physics, label_dims, latent)
 
-    local_time = time.ctime(time.time())
-    print('End Time = %s' % local_time)
-    run_time = (time.time() - start_time) / 3600
-    print('Total Time Lapsed = %s Hours' % run_time)
+    print('Total Time Lapsed = %.2f Hours' % ((time.time() - start_time) / 3600))
 
-    # Save the final models
+    # Save Models
     torch.save(generator.state_dict(), 'final_generator_qgan_iwae.pth')
     torch.save(discriminator.state_dict(), 'final_discriminator_qgan_iwae.pth')
 
-    # Test the generator using testTensor
-    try:
-        generator.load_state_dict(torch.load('final_generator_qgan_iwae.pth', map_location=device))
-    except Exception as e:
-        print("Could not load final generator state dict:", e)
+    # ==========================================
+    # ### FIX 4: True Conditional Testing ###
+    # ==========================================
+    # We test the model by asking it to generate a SPECIFIC High-Q target.
+    # Example normalized targets: A0=0.95, w0=0.5 (approx 46 THz), Gamma=0.01 (Very narrow), q=0.5
+    target_fano_params = torch.tensor([[0.95, 0.5, 0.01, 0.5]], device=device)
+    
+    # Create 64 variations of this target
+    target_fano_batch = target_fano_params.repeat(64, 1)
+    
+    # Combine with random latent noise to explore different geometries for the same target
+    random_latent_noise = torch.rand(64, latent, device=device)
+    custom_fixed_noise = torch.cat((target_fano_batch, random_latent_noise), dim=1)
 
-    fixed_noise = torch.rand(64, nz, device=device)
+    img_list = test_generator(generator, iwae, custom_fixed_noise, device, img_list)
 
-    # Call the test function
-    img_list = test_generator(generator, iwae, fixed_noise, device, img_list)
-
-    # Plot and save G and D Training Losses
+    # Plot Losses
     plt.figure(figsize=(10, 5))
     plt.title("Generator and Discriminator Loss During Training")
     plt.plot(G_losses, label="Generator Loss")
@@ -335,19 +306,10 @@ if __name__ == '__main__':
     plt.savefig('losses-qgan-iwae.png')
     plt.show()
 
-    # Plot the real images and the fake images
-    try:
-        plt.figure(figsize=(15, 15))
-        plt.subplot(1, 2, 1)
-        plt.axis("off")
-        plt.title("Real Images")
-        plt.imshow(np.transpose(vutils.make_grid(real_batch[0].to(device)[:64], padding=5, normalize=True).cpu(), (1, 2, 0)))
-
-        plt.subplot(1, 2, 2)
-        plt.axis("off")
-        plt.title("Fake Images")
-        plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
-        plt.savefig('fake-and-real-iwae.png')
-        plt.show()
-    except Exception as e:
-        print("Could not plot images:", e)
+    # Plot Fake Images
+    plt.figure(figsize=(8, 8))
+    plt.axis("off")
+    plt.title("Generated High-Q Metasurfaces (Conditional Target)")
+    plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
+    plt.savefig('conditional_fake_images.png')
+    plt.show()
