@@ -43,11 +43,22 @@ class MetasurfaceDataset(Dataset):
         return len(self.data_frame)
 
     def __getitem__(self, idx):
-        # Assuming Column 0 is the filename (e.g., 'image_001.png')
-        img_name = os.path.join(self.img_dir, str(self.data_frame.iloc[idx, 0]))
-        image = Image.open(img_name).convert('RGB')
+        # 1. Get name and strip accidental spaces
+        base_name = str(self.data_frame.iloc[idx, 0]).strip()
         
-        # Assuming Columns 1, 2, 3, 4 are the Fano labels [A0, w0, Gamma, q]
+        # 2. Add extension if missing
+        if not base_name.endswith(('.png', '.jpg', '.jpeg')):
+            base_name += '.png'
+            
+        # 3. Join path
+        img_name = os.path.join(self.img_dir, base_name)
+        
+        # 4. SAFETY CHECK: Tell us exactly what is missing and stop cleanly
+        if not os.path.exists(img_name):
+            raise FileNotFoundError(f"\nCRITICAL ERROR: Python cannot find this image:\n{img_name}\n"
+                                    f"Please check if it is spelled correctly in the CSV and actually exists in the folder.")
+        
+        image = Image.open(img_name).convert('RGB')
         labels = self.data_frame.iloc[idx, 1:5].values.astype('float32')
         
         if self.transform:
