@@ -174,8 +174,8 @@ class Discriminator(nn.Module):
         x2 = self.l1(label)
         combined_input = torch.cat((x1, x2), dim=1)
         x = F.leaky_relu(self.model(combined_input), 0.2)
-        gan_pred = torch.sigmoid(self.gan_output(x))
-        physics_pred = self.physics_output(x)
+        gan_pred = self.gan_output(x)
+        physics_pred = torch.sigmoid(self.physics_output(x))
         return gan_pred.view(-1), physics_pred
 
 # Define Quantum Generator class
