@@ -26,7 +26,7 @@ if torch.cuda.is_available():
         print("Could not get CUDA device name:", e)
 
 # ==========================================
-# ### FIX 1: Custom Dataset to prevent misalignment ###
+# ### FIX 1: Sequential Dataset
 # ==========================================
 class MetasurfaceDataset(Dataset):
     def __init__(self, csv_file, img_dir, transform=None, max_samples=None):
@@ -34,31 +34,34 @@ class MetasurfaceDataset(Dataset):
         self.img_dir = img_dir
         self.transform = transform
         
-        # ### NEW: Allows you to artificially shrink dataset to 64, 500, or 3000 
-        # samples for fair benchmarking (Reviewer 1 & 2)
+        # 1. Grab every actual image file in the directory
+        valid_extensions = ('.png', '.jpg', '.jpeg')
+        all_files = os.listdir(img_dir)
+        
+        # 2. Filter out hidden files (like .DS_Store) and SORT them.
+        # Sorting is critical here so they load 1, 2, 3... and match the CSV rows.
+        self.image_files = sorted([
+            f for f in all_files if f.lower().endswith(valid_extensions)
+        ])
+        
         if max_samples is not None:
             self.data_frame = self.data_frame.iloc[:max_samples]
+            self.image_files = self.image_files[:max_samples]
+
+        # Quick safety warning if counts don't match
+        if len(self.image_files) < len(self.data_frame):
+            print(f"WARNING: CSV has {len(self.data_frame)} rows, but only found {len(self.image_files)} images!")
 
     def __len__(self):
         return len(self.data_frame)
 
     def __getitem__(self, idx):
-        # 1. Get name and strip accidental spaces
-        base_name = str(self.data_frame.iloc[idx, 0]).strip()
-        
-        # 2. Add extension if missing
-        if not base_name.endswith(('.png', '.jpg', '.jpeg')):
-            base_name += '.png'
-            
-        # 3. Join path
-        img_name = os.path.join(self.img_dir, base_name)
-        
-        # 4. SAFETY CHECK: Tell us exactly what is missing and stop cleanly
-        if not os.path.exists(img_name):
-            raise FileNotFoundError(f"\nCRITICAL ERROR: Python cannot find this image:\n{img_name}\n"
-                                    f"Please check if it is spelled correctly in the CSV and actually exists in the folder.")
-        
+        # 1. Grab the image purely by its index position in the sorted folder
+        img_name = os.path.join(self.img_dir, self.image_files[idx])
         image = Image.open(img_name).convert('RGB')
+        
+        # 2. Grab the corresponding row from the CSV
+        # Assuming Columns 1, 2, 3, 4 are the Fano labels [A0, w0, Gamma, q]
         labels = self.data_frame.iloc[idx, 1:5].values.astype('float32')
         
         if self.transform:
@@ -67,7 +70,7 @@ class MetasurfaceDataset(Dataset):
         return image, torch.tensor(labels)
 
 # ==========================================
-# ### FIX 2: Dynamic Physics Loss Function ###
+# ### FIX 2: Dynamic Physics Loss Function (BULLETPROOF) ###
 # ==========================================
 def physics_constraint_loss(pred_params, condition_labels, 
                             lambda_A=26, lambda_w0=14, lambda_Q=26):
@@ -89,18 +92,25 @@ def physics_constraint_loss(pred_params, condition_labels,
     # Dynamically calculate the target Q-factor
     Q_min_target = w0_target / (torch.abs(Gamma_target) + 1e-8)
 
-    # 3. Calculate Fano Absorption of the PREDICTION at the TARGET frequency
+    # 3. Calculate Fano Absorption (BULLETPROOF BOUNDS)
     eps = 2.0 * (w0_target - omega_0_pred) / (Gamma_pred + 1e-8)
     A_pred_at_target = A0_pred * ((q_pred + eps) ** 2 / (1.0 + eps ** 2))
-    A_pred_at_target = torch.clamp(A_pred_at_target, max=1.0)
-
-    # 4. Calculate predicted Q-factor
-    Q_val = omega_0_pred / (torch.abs(Gamma_pred) + 1e-8)
     
-    # 5. Component Losses
+    # CRITICAL: Prevent massive negative absorption guesses
+    A_pred_at_target = torch.clamp(A_pred_at_target, min=0.0, max=1.0)
+
+    # 4. Calculate predicted Q-factor (BULLETPROOF BOUNDS)
+    # Frequencies cannot be negative, enforce abs() to prevent negative Q-factors
+    Q_val = torch.abs(omega_0_pred) / (torch.abs(Gamma_pred) + 1e-8)
+    
+    # 5. Component Losses (STRICTLY NORMALIZED TO [0, 1])
     loss_A = torch.clamp(A_target - A_pred_at_target, min=0.0) ** 2 
-    loss_w0 = ((omega_0_pred - w0_target) / 50.0) ** 2
-    Q_penalty = torch.relu(Q_min_target - Q_val) ** 2
+    
+    # CRITICAL: Clamp frequency error so a wild guess doesn't explode the square
+    loss_w0 = torch.clamp(torch.abs(omega_0_pred - w0_target) / 50.0, max=1.0) ** 2 
+    
+    # Q_penalty is strictly bounded. Since Q_val is positive, this ratio never exceeds 1.0
+    Q_penalty = (torch.relu(Q_min_target - Q_val) / (Q_min_target + 1e-8)) ** 2
 
     # Total weighted loss
     loss = (lambda_A * loss_A + lambda_w0 * loss_w0 + lambda_Q * Q_penalty).mean()
@@ -227,7 +237,7 @@ if __name__ == '__main__':
     workers = 1 
     lrG = 1e-5
     lrD = 1e-4
-    lambda_physics = 1e-3  # You may need to tune this to balance GAN and Phys loss
+    lambda_physics = 0.1  # You may need to tune this to balance GAN and Phys loss
     label_dims = 4
     latent = 5
     nz = label_dims + latent
@@ -241,9 +251,9 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Paths
-    spectra_path = 'C:/.../fano_fit_results.csv'  
-    img_path = 'C:/.../Images/'   
-    pretrained_iwae_path = 'C:/.../pretrained_iwae.pth'      
+    spectra_path = 'C:/..../Training data_1.csv'  
+    img_path = 'C:/..../Images/'
+    pretrained_iwae_path = 'C:/..../pretrained_iwae.pth'      
 
     # Dataset & Dataloader
     transform = transforms.Compose([
@@ -252,7 +262,7 @@ if __name__ == '__main__':
         transforms.ToTensor()
     ])
     
-    # NOTE: To do a fair benchmark (Reviewer 2), pass max_samples=64 or 3000 here
+    # NOTE: To do a fair benchmark, pass max_samples=64 or 3000 here
     dataset = MetasurfaceDataset(csv_file=spectra_path, img_dir=img_path, transform=transform, max_samples=None)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=workers, drop_last=True)
 
@@ -266,7 +276,7 @@ if __name__ == '__main__':
 
     iwae = IWAE(n_qubits=n_qubits, nc=nc, beta=2.0, num_samples=num_samples).to(device)
     try:
-        iwae.load_state_dict(torch.load(pretrained_iwae_path, map_location=device))
+        iwae.load_state_dict(torch.load(pretrained_iwae_path, map_location=device, weights_only=True))
         print("Loaded pretrained IWAE successfully.")
     except Exception as e:
         print("Could not load pretrained IWAE:", e)
@@ -274,7 +284,7 @@ if __name__ == '__main__':
     # Optimizers
     optimizerG = optim.Adam(generator.parameters(), lr=lrG, betas=(beta1, beta2))
     optimizerD = optim.Adam(discriminator.parameters(), lr=lrD, betas=(beta1, beta2))
-    criterion = nn.BCELoss(reduction='mean') 
+    criterion = nn.BCEWithLogitsLoss(reduction='mean')
 
     # TRAIN
     start_time = time.time()
