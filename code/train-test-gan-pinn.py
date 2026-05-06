@@ -196,34 +196,49 @@ criterion_gan = nn.BCEWithLogitsLoss()
 mse_loss = nn.MSELoss() # ### FIX 2a: Needed for Discriminator training
 
 # ### FIX 1: Dynamic Physics Loss that checks the PREDICTION against the TARGET CONDITIONS
-def physics_constraint_loss(pred_params, condition_labels, lambda_A=26, lambda_w0=14, lambda_Q=26):
+def physics_constraint_loss(pred_params, condition_labels, 
+                            lambda_A=26, lambda_w0=14, lambda_Q=26):
+    """
+    Penalizes the generator if its physics outputs don't match the specific 
+    conditions it was asked to generate.
+    """
     # 1. Un-normalize PREDICTED params
     A0_pred = pred_params[:, 0:1]  
-    omega_0_pred = pred_params[:, 1:2] * 56.25 + 18.75 
-    Gamma_pred = pred_params[:, 2:3] * 6.387283913 - 0.034279125
-    q_pred = pred_params[:, 3:4] * 215.33279325 - 41.84328885
+    omega_0_pred = pred_params[:, 1:2] * 56.25 + 18.75
+    Gamma_pred = pred_params[:, 2:3] * 6.387283913 + (-0.034279125)
+    q_pred = pred_params[:, 3:4] * 215.33279325 + (-41.84328885)
 
-    # 2. Un-normalize TARGET condition labels (What we asked the generator to make)
+    # 2. Un-normalize TARGET condition labels
     A_target = condition_labels[:, 0:1]
     w0_target = condition_labels[:, 1:2] * 56.25 + 18.75
-    Gamma_target = condition_labels[:, 2:3] * 6.387283913 - 0.034279125
+    Gamma_target = condition_labels[:, 2:3] * 6.387283913 + (-0.034279125)
     
-    Q_min_target = w0_target / (torch.abs(Gamma_target) + 1e-6)
+    # Dynamically calculate the target Q-factor
+    Q_min_target = w0_target / (torch.abs(Gamma_target) + 1e-8)
 
-    # 3. Fano Math Evaluated at the Target Frequency
-    delta = 2.0 * (w0_target - omega_0_pred) / (Gamma_pred + 1e-6)
-    A = A0_pred * ((q_pred + delta)**2 / (1.0 + delta**2))
-    A = torch.clamp(A, max=1.0)
+    # 3. Calculate Fano Absorption (BULLETPROOF BOUNDS)
+    eps = 2.0 * (w0_target - omega_0_pred) / (Gamma_pred + 1e-8)
+    A_pred_at_target = A0_pred * ((q_pred + eps) ** 2 / (1.0 + eps ** 2))
+    
+    # CRITICAL: Prevent massive negative absorption guesses
+    A_pred_at_target = torch.clamp(A_pred_at_target, min=0.0, max=1.0)
 
-    Q_val = omega_0_pred / (torch.abs(Gamma_pred) + 1e-6)
-    Q_penalty = torch.relu(Q_min_target - Q_val) ** 2
+    # 4. Calculate predicted Q-factor (BULLETPROOF BOUNDS)
+    # Frequencies cannot be negative, enforce abs() to prevent negative Q-factors
+    Q_val = torch.abs(omega_0_pred) / (torch.abs(Gamma_pred) + 1e-8)
+    
+    # 5. Component Losses (STRICTLY NORMALIZED TO [0, 1])
+    loss_A = torch.clamp(A_target - A_pred_at_target, min=0.0) ** 2 
+    
+    # CRITICAL: Clamp frequency error so a wild guess doesn't explode the square
+    loss_w0 = torch.clamp(torch.abs(omega_0_pred - w0_target) / 50.0, max=1.0) ** 2 
+    
+    # Q_penalty is strictly bounded. Since Q_val is positive, this ratio never exceeds 1.0
+    Q_penalty = (torch.relu(Q_min_target - Q_val) / (Q_min_target + 1e-8)) ** 2
 
-    # 4. Component Losses
-    loss_A = torch.clamp(A_target - A, min=0.0)**2
-    loss_w0 = ((omega_0_pred - w0_target) / 50.0)**2
-
-    loss = (lambda_A * loss_A) + (lambda_w0 * loss_w0) + (lambda_Q * Q_penalty)
-    return loss.mean()
+    # Total weighted loss
+    loss = (lambda_A * loss_A + lambda_w0 * loss_w0 + lambda_Q * Q_penalty).mean()
+    return loss
 
 optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
 optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
